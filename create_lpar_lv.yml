@@ -1,0 +1,56 @@
+---
+# Ansible Playbook: Create Logical Volume on VIOS and map to LPAR
+#
+# Führt die Rolle create_lpar_lv aus. Läuft gegen die HMC(s) aus dem Inventory;
+# die Rolle spricht per SSH mit der HMC und der VIOS.
+#
+# Pflichtparameter (-e oder in group_vars):
+#   create_lpar_lv_lpar_name        - Name der LPAR
+#   create_lpar_lv_managed_system   - Managed System (z.B. power91)
+#   create_lpar_lv_volume_name      - Name des Logical Volume
+#   create_lpar_lv_volume_group     - Volume Group auf der VIOS
+#   create_lpar_lv_vios_name        - VIOS-Partition (z.B. power91-vios)
+#   create_lpar_lv_hmc_password     - HMC-Passwort
+#   create_lpar_lv_vios_password    - VIOS-Passwort (padmin)
+#
+# Optional u.a.:
+#   create_lpar_lv_hmc_host         - HMC-Host (Default: inventory_hostname)
+#   create_lpar_lv_disk_size_gb     - Größe in GB (Default: 50)
+#   create_lpar_lv_vios_ip          - VIOS IP (wenn nicht = vios_name)
+#
+# Beispiel:
+#   ansible-playbook create_lpar_lv.yml -i inventory/hosts.yml \
+#     -e "create_lpar_lv_lpar_name=mylpar" \
+#     -e "create_lpar_lv_managed_system=power91" \
+#     -e "create_lpar_lv_volume_name=mylpar_runix" \
+#     -e "create_lpar_lv_volume_group=datavg" \
+#     -e "create_lpar_lv_vios_name=power91-vios" \
+#     -e "create_lpar_lv_vios_ip=10.32.104.243" \
+#     -e "create_lpar_lv_disk_size_gb=100" \
+#     -e "hmc_pass=YOUR_HMC_PASS" \
+#     -e "create_lpar_lv_hmc_password={{ hmc_pass }}" \
+#     -e "create_lpar_lv_vios_password=YOUR_VIOS_PASS"
+#
+# Mit Vault für Passwörter:
+#   ansible-playbook create_lpar_lv.yml -i inventory/hosts.yml \
+#     -e "@lpar_config.yml" -e "create_lpar_lv_hmc_password={{ hmc_pass }}" \
+#     -e "create_lpar_lv_vios_password={{ redhat_linux_install_vios_password }}" \
+#     --ask-vault-pass
+
+- name: Create LPAR Logical Volume on VIOS
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # HMC-Passwort aus häufig verwendeter Variable durchreichen
+    create_lpar_lv_hmc_password: "{{ hmc_pass | default('') }}"
+    create_lpar_lv_hmc_host: "{{ inventory_hostname }}"
+
+  roles:
+    - role: create_lpar_lv
+      # Alle create_lpar_lv_* Variablen via -e oder group_vars/host_vars setzen
