@@ -1,0 +1,56 @@
+%pre
+%end
+# Use network installation
+url --url="http://{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}:{{ redhat_linux_install_repo_port }}/{{ redhat_linux_install_repo_dir }}/BaseOS"
+
+# Use text mode install
+text
+
+# Keyboard layouts
+keyboard --vckeymap=us --xlayouts='us'
+
+# System language
+lang en_US.UTF-8
+
+# Root password
+rootpw --plaintext {{ redhat_linux_install_host_password }}
+
+# Do not configure the X Window System
+skipx
+
+# System timezone
+timezone Asia/Kolkata --utc
+
+# Clear the Master Boot Record
+zerombr
+# Partition clearing information
+clearpart --all --initlabel --drives=sda
+
+# System bootloader configuration
+bootloader --append="crashkernel=2G-4G:384M,4G-16G:512M,16G-64G:1G,64G-128G:2G,128G-:4G" --location=mbr --boot-drive=sda
+
+
+# Generated using Blivet version 3.6.0
+ignoredisk --only-use=sda
+
+autopart --fstype=ext4
+
+# System services
+services --enabled="NetworkManager,sshd"
+
+# Reboot after installation
+reboot
+
+%packages
+@core
+device-mapper-multipath
+kexec-tools
+%end
+
+%post
+sed -i 's/#\?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config;service sshd restart;multipath -t >/etc/multipath.conf;service multipathd start
+%end
+
+%addon com_redhat_kdump --enable --reserve-mb='auto'
+
+%end

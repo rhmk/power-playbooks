@@ -1,0 +1,249 @@
+---
+# Ansible Playbook: Create Linux LPAR with RHEL DVD Installation
+#
+# This playbook creates a new Linux LPAR and configures it for installation
+# from a RHEL DVD ISO available on the VIOS server.
+#
+# Prerequisites:
+#   1. RHEL ISO must be loaded as virtual optical media on VIOS
+#      (use 'mkvdev -fbo -vadapter vhostX' and 'loadopt -vtd <vtopt> -disk <iso_path>')
+#   2. VIOS must have available storage for the LPAR's disk
+#   3. Virtual network must be configured on the managed system
+#
+# Usage:
+#   ansible-playbook create_linux_lpar.yml \
+#     -e "lpar_name=rhel-server01" \
+#     -e "lpar_cpu=4" \
+#     -e "lpar_mem=8192" \
+#     -e "lpar_disk=50" \
+#     -e "hmc_pass=PASSWORD"
+
+- name: Create Linux LPAR for RHEL DVD or Network installation
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # ==========================================================================
+    # LPAR Configuration (override via extra-vars)
+    # ==========================================================================
+
+    # LPAR name (required)
+    lpar_name: ""
+
+    # CPU configuration
+    lpar_cpu: 2                    # Number of virtual processors
+    lpar_cpu_min: 1                # Minimum processors
+    lpar_cpu_max: 4                # Maximum processors
+
+    # Processing units (for shared processor mode)
+    lpar_proc_units: 0.5           # Processing units
+    lpar_proc_units_min: 0.1       # Minimum processing units
+    lpar_proc_units_max: 2.0       # Maximum processing units
+
+    # Memory configuration (in MB)
+    lpar_mem: 4096                 # Memory in MB
+    lpar_mem_min: 2048             # Minimum memory
+    lpar_mem_max: 16384            # Maximum memory
+
+    # Disk configuration (in GB)
+    lpar_disk: 50                  # Disk size in GB
+
+    # Sharing mode: 'shared' or 'dedicated'
+    sharing_mode: "shared"
+
+    # Processor mode for shared processors: 'uncapped' or 'capped'
+    proc_mode: "uncapped"
+
+    # ==========================================================================
+    # VIOS and Network Configuration
+    # ==========================================================================
+
+    # VIOS partition name (for virtual SCSI mapping)
+    # vios_name: "{{ vios_partition | default('power91-vios') }}"
+
+    # Virtual network name (must exist on managed system)
+    virtual_network: "{{ vnet_name | default('VLAN1-ETHERNET0') }}"
+
+    # VLAN ID (optional, 0 for untagged)
+    vlan_id: "{{ vnet_vlan | default(1) }}"
+
+    # ==========================================================================
+    # Target System
+    # ==========================================================================
+
+    # Managed system (first from inventory if not specified)
+    managed_system: "{{ target_system | default(managed_systems_list[0]) }}"
+
+    # ==========================================================================
+    # HMC Credentials
+    # ==========================================================================
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - hmc_password | length > 0
+          - lpar_name | length > 0
+          - lpar_cpu | int > 0
+          - lpar_mem | int >= 1024
+          - lpar_disk | int > 0
+        fail_msg: |
+          Invalid configuration:
+          - hmc_password must be provided
+          - lpar_name must be provided (current: '{{ lpar_name }}')
+          - lpar_cpu must be > 0 (current: {{ lpar_cpu }})
+          - lpar_mem must be >= 1024 MB (current: {{ lpar_mem }})
+          - lpar_disk must be > 0 GB (current: {{ lpar_disk }})
+
+    - name: Display LPAR configuration
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          LPAR Creation Configuration
+          ============================================
+          HMC Host: {{ inventory_hostname }}
+          Managed System: {{ managed_system }}
+          VIOS: {{ vios_name | default('undefined') }}
+
+          LPAR Name: {{ lpar_name }}
+
+          CPU Configuration:
+            Processors: {{ lpar_cpu }} (min: {{ lpar_cpu_min }}, max: {{ lpar_cpu_max }})
+            Processing Units: {{ lpar_proc_units }} (min: {{ lpar_proc_units_min }}, max: {{ lpar_proc_units_max }})
+            Mode: {{ proc_mode }} / {{ sharing_mode }}
+
+          Memory: {{ lpar_mem }} MB (min: {{ lpar_mem_min }}, max: {{ lpar_mem_max }})
+          Disk: {{ lpar_disk }} GB
+
+          Network: {{ virtual_network }} (VLAN: {{ vlan_id }})
+          ============================================
+
+    # =========================================================================
+    # CREATE LPAR
+    # =========================================================================
+    - name: Create Linux LPAR
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        vm_name: "{{ lpar_name }}"
+        os_type: "linux"
+        proc: "{{ lpar_cpu }}"
+        # min_proc: "{{ lpar_cpu_min }}"
+        # max_proc: "{{ lpar_cpu_max }}"
+        # proc_unit: "{{ lpar_proc_units }}"
+        # min_proc_unit: "{{ lpar_proc_units_min }}"
+        # max_proc_unit: "{{ lpar_proc_units_max }}"
+        # proc_mode: "{{ proc_mode }}"
+        # sharing_mode: "{{ sharing_mode }}"
+        mem: "{{ lpar_mem }}"
+        # min_mem: "{{ lpar_mem_min }}"
+        # max_mem: "{{ lpar_mem_max }}"
+        virt_network_config:
+          - network_name: "{{ virtual_network }}"
+        # This only works with pysical disks, not logical volumes
+        # volume_config:
+        #  - volume_size: "{{ lpar_disk }}"
+        state: present
+      register: lpar_create_result
+
+    - name: Display LPAR creation result
+      ansible.builtin.debug:
+        msg: "LPAR '{{ lpar_name }}' created successfully"
+      when: lpar_create_result is succeeded
+
+    - name: Facts of the partition
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        vm_name: "{{ lpar_name }}"
+        advanced_info: true
+        state: facts
+      register: redhat_linux_install_facts_output
+
+    # DISPLAY MANUAL VIOS STEPS (if needed)
+    # =========================================================================
+    - name: Display manual VIOS configuration steps
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          MANUAL VIOS CONFIGURATION STEPS
+          ============================================
+
+          If virtual SCSI was not configured automatically, follow these steps on VIOS:
+
+          1. Find the virtual host adapter for the new LPAR:
+             $ lsmap -all | grep {{ lpar_name }}
+
+          2. Create virtual disk for the LPAR:
+             $ mklv -lv {{ lpar_name }}_rootvg rootvg {{ lpar_disk }}G
+             $ mkvdev -vdev {{ lpar_name }}_rootvg -vadapter vhostX
+
+          3. Create and load virtual optical device with RHEL ISO:
+             $ mkvdev -fbo -vadapter vhostX
+             $ lsdev -type optical  (note the vtoptX device)
+             $ loadopt -vtd vtoptX -disk /path/to/rhel.iso
+
+          4. Verify mappings:
+             $ lsmap -vadapter vhostX
+
+          ============================================
+          BOOT THE LPAR
+          ============================================
+
+          After VIOS configuration, activate the LPAR:
+
+          Via HMC GUI:
+            - Right-click LPAR → Activate → Advanced
+            - Set boot mode to "SMS" or "Normal"
+            - Select virtual optical as boot device
+
+          Via Ansible (power on):
+            ansible-playbook lpar_control.yml \
+              -e "lpar_name={{ lpar_name }}" \
+              -e "managed_system={{ managed_system }}" \
+              -e "power_state=on" \
+              -e "hmc_pass=PASSWORD"
+
+          ============================================
+
+    # =========================================================================
+    # SUMMARY
+    # =========================================================================
+    - name: Display creation summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          LPAR CREATION SUMMARY
+          ============================================
+          LPAR Name: {{ lpar_name }}
+          Status: CREATED
+
+          Configuration:
+            - CPU: {{ lpar_cpu }} processors ({{ proc_mode }})
+            - Memory: {{ lpar_mem }} MB
+            - Disk: {{ lpar_disk }} GB
+            - Network: {{ virtual_network }}
+
+          Next Steps:
+            1. Verify/configure virtual SCSI on VIOS (if not done automatically)
+            2. Load RHEL ISO into virtual optical device on VIOS
+            3. Power on LPAR and boot from virtual optical
+            4. Complete RHEL installation
+          ============================================

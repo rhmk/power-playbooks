@@ -1,0 +1,100 @@
+---
+# Ansible Playbook: Power On/Off a specific LPAR by name
+#
+# This playbook controls the power state of individual LPARs (partitions)
+# using the ibm.power_hmc collection.
+#
+# Usage examples:
+#   Power on an LPAR:
+#     ansible-playbook lpar_control.yml -e "lpar_name=my_lpar power_state=on hmc_pass=PASSWORD"
+#
+#   Power off an LPAR:
+#     ansible-playbook lpar_control.yml -e "lpar_name=my_lpar power_state=off hmc_pass=PASSWORD"
+#
+#   Specify managed system:
+#     ansible-playbook lpar_control.yml -e "lpar_name=my_lpar managed_system=power91 power_state=on hmc_pass=PASSWORD"
+
+- name: Control power state of a specific LPAR
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # Power state: 'on' or 'off'
+    power_state: "on"
+
+    # LPAR name (required)
+    lpar_name: ""
+
+    # Managed system name - if not specified, will search all systems on the HMC
+    managed_system: ""
+
+    # HMC credentials (override via extra-vars or vault)
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - power_state in ['on', 'off']
+          - hmc_password | length > 0
+          - lpar_name | length > 0
+        fail_msg: |
+          Invalid configuration:
+          - power_state must be 'on' or 'off' (current: {{ power_state }})
+          - hmc_password must be provided
+          - lpar_name must be provided (current: '{{ lpar_name }}')
+
+    - name: Display operation summary
+      ansible.builtin.debug:
+        msg: |
+          HMC Host: {{ inventory_hostname }}
+          Operation: Power {{ power_state | upper }}
+          LPAR: {{ lpar_name }}
+
+    # =========================================================================
+    # POWER ON LPAR
+    # =========================================================================
+    - name: Power ON LPAR
+      when: power_state == 'on'
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        vm_name: "{{ lpar_name }}"
+        action: poweron
+      register: poweron_result
+
+    - name: Display power on result
+      when: power_state == 'on'
+      ansible.builtin.debug:
+        msg: "LPAR '{{ lpar_name }}': POWER ON {{ 'SUCCESSFUL' if not poweron_result.failed | default(false) else 'FAILED' }}"
+
+    # =========================================================================
+    # POWER OFF LPAR
+    # =========================================================================
+    - name: Shutdown LPAR
+      when: power_state == 'off'
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        vm_name: "{{ lpar_name }}"
+        action: shutdown
+      register: shutdown_result
+
+    - name: Display shutdown result
+      when: power_state == 'off'
+      ansible.builtin.debug:
+        msg: "LPAR '{{ lpar_name }}': SHUTDOWN {{ 'SUCCESSFUL' if not shutdown_result.failed | default(false) else 'FAILED' }}"

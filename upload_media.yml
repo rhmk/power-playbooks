@@ -1,0 +1,190 @@
+---
+# Ansible Playbook: Upload DVD/ISO image to VIOS repository via HMC
+#
+# This playbook uploads an ISO/DVD image to the HMC's VIOS image repository.
+# The HMC pulls the file via SFTP or NFS from a remote server.
+#
+# Common setup: Use your control node as the SFTP server (SSH must be enabled)
+#
+# Usage examples:
+#   Upload via SFTP from control node:
+#     ansible-playbook upload_media.yml \
+#       -e "iso_file=/path/to/image.iso" \
+#       -e "sftp_server=192.168.1.100" \
+#       -e "sftp_user=myuser" \
+#       -e "sftp_password=mypass" \
+#       -e "hmc_pass=PASSWORD"
+#
+#   Upload via NFS:
+#     ansible-playbook upload_media.yml \
+#       -e "iso_file=/exports/images/image.iso" \
+#       -e "media_type=nfs" \
+#       -e "nfs_server=192.168.1.100" \
+#       -e "nfs_mount=/exports/images" \
+#       -e "hmc_pass=PASSWORD"
+
+- name: Upload ISO/DVD image to VIOS repository on HMC
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # ISO file path (on the remote SFTP/NFS server)
+    iso_file: ""
+
+    # Media type: 'sftp' or 'nfs'
+    media_type: "sftp"
+
+    # Directory name in HMC repository (will be created)
+    repository_dir: "uploaded_images"
+
+    # SFTP settings (when media_type=sftp)
+    sftp_server: ""
+    sftp_user: ""
+    sftp_password: ""
+
+    # NFS settings (when media_type=nfs)
+    nfs_server: ""
+    nfs_mount: ""
+
+    # Target managed system (first one from inventory if not specified)
+    managed_system: "{{ target_system | default(managed_systems_list[0]) }}"
+
+    # HMC credentials
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - hmc_password | length > 0
+          - iso_file | length > 0
+          - media_type in ['sftp', 'nfs']
+        fail_msg: |
+          Invalid configuration:
+          - hmc_password must be provided
+          - iso_file must be provided
+          - media_type must be 'sftp' or 'nfs' (current: {{ media_type }})
+
+    - name: Validate SFTP settings
+      when: media_type == 'sftp'
+      ansible.builtin.assert:
+        that:
+          - sftp_server | length > 0
+          - sftp_user | length > 0
+          - sftp_password | length > 0
+        fail_msg: |
+          SFTP configuration incomplete:
+          - sftp_server must be provided (IP/hostname of SFTP server)
+          - sftp_user must be provided
+          - sftp_password must be provided
+
+    - name: Validate NFS settings
+      when: media_type == 'nfs'
+      ansible.builtin.assert:
+        that:
+          - nfs_server | length > 0
+          - nfs_mount | length > 0
+        fail_msg: |
+          NFS configuration incomplete:
+          - nfs_server must be provided
+          - nfs_mount must be provided (export path)
+
+    - name: Display operation summary
+      ansible.builtin.debug:
+        msg: |
+          HMC Host: {{ inventory_hostname }}
+          Managed System: {{ managed_system }}
+          Media Type: {{ media_type | upper }}
+          ISO File: {{ iso_file }}
+          Repository Directory: {{ repository_dir }}
+          {% if media_type == 'sftp' %}
+          SFTP Server: {{ sftp_server }}
+          SFTP User: {{ sftp_user }}
+          {% else %}
+          NFS Server: {{ nfs_server }}
+          NFS Mount: {{ nfs_mount }}
+          {% endif %}
+
+    # =========================================================================
+    # UPLOAD VIA SFTP
+    # =========================================================================
+    - name: Upload ISO to HMC via SFTP
+      when: media_type == 'sftp'
+      ibm.power_hmc.vios:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        action: copy
+        media: sftp
+        remote_server: "{{ sftp_server }}"
+        sftp_auth:
+          sftp_username: "{{ sftp_user }}"
+          sftp_password: "{{ sftp_password }}"
+        remote_directory: "{{ iso_file | dirname }}"
+        directory_name: "{{ repository_dir }}"
+        files:
+          - "{{ iso_file | basename }}"
+      register: sftp_upload_result
+
+    # =========================================================================
+    # UPLOAD VIA NFS
+    # =========================================================================
+    - name: Upload ISO to HMC via NFS
+      when: media_type == 'nfs'
+      ibm.power_hmc.vios:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        action: copy
+        media: nfs
+        remote_server: "{{ nfs_server }}"
+        mount_location: "{{ nfs_mount }}"
+        remote_directory: "{{ iso_file | dirname | relpath(nfs_mount) }}"
+        directory_name: "{{ repository_dir }}"
+        files:
+          - "{{ iso_file | basename }}"
+      register: nfs_upload_result
+
+    # =========================================================================
+    # RESULTS
+    # =========================================================================
+    - name: Display upload result
+      ansible.builtin.debug:
+        msg: |
+          Upload completed!
+          File: {{ iso_file | basename }}
+          Repository Directory: {{ repository_dir }}
+          Result: {{ sftp_upload_result if media_type == 'sftp' else nfs_upload_result }}
+
+    # =========================================================================
+    # VERIFY (Optional)
+    # =========================================================================
+    - name: List images in HMC repository
+      ibm.power_hmc.vios:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        state: facts
+      register: vios_facts
+      ignore_errors: true
+
+    - name: Display repository contents
+      ansible.builtin.debug:
+        msg: "VIOS repository info: {{ vios_facts.vios_info | default('Unable to retrieve') }}"
+      when: vios_facts is defined

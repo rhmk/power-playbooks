@@ -1,0 +1,266 @@
+# {{ ansible_managed }}
+#
+# Kickstart Configuration for IBM Power LPARs (ppc64le)
+# RHEL {{ rhel_version }} Automated Installation
+#
+# This kickstart file is optimized for Power systems (POWER9/POWER10)
+# running as LPARs under PowerVM.
+#
+
+#version=RHEL{{ rhel_major_version }}
+
+# =============================================================================
+# Installation Method
+# =============================================================================
+
+# Use network installation
+url --url="http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/"
+
+# Use text mode installation (recommended for Power LPARs)
+text
+
+# Accept EULA
+eula --agreed
+
+# Reboot after installation
+reboot --eject
+
+# =============================================================================
+# Localization
+# =============================================================================
+
+# System language
+lang {{ ks_language }}
+
+# Keyboard layout
+keyboard --vckeymap={{ ks_keyboard }} --xlayouts='{{ ks_keyboard }}'
+
+# System timezone
+timezone {{ ks_timezone }} --utc
+
+# =============================================================================
+# Network Configuration
+# =============================================================================
+
+# Configure network via DHCP (primary interface)
+network --bootproto=dhcp --device=link --activate --onboot=yes
+
+# Set hostname (can be overridden by DHCP)
+network --hostname=power-lpar.{{ dhcp_domain_name }}
+
+# =============================================================================
+# Security
+# =============================================================================
+
+# Root password (use vault-encrypted variable in production!)
+# Generate hash with: python3 -c 'import crypt; print(crypt.crypt("password", crypt.mksalt(crypt.METHOD_SHA512)))'
+rootpw --iscrypted {{ ks_root_password | password_hash('sha512') }}
+
+# Disable firewall during install (enable post-install)
+firewall --disabled
+
+# SELinux configuration
+selinux --enforcing
+
+# Enable SSH for remote access
+services --enabled="sshd,chronyd"
+
+# =============================================================================
+# Disk Configuration
+# =============================================================================
+
+# Clear all partitions on installation disk
+clearpart --all --initlabel
+
+# Ignore other disks (Power systems may have multiple)
+ignoredisk --only-use=sda
+
+# Automatic partitioning with LVM (recommended for Power)
+autopart --type=lvm --fstype=xfs
+
+# Alternative: Manual partitioning for Power LPARs
+# NOTE: Uncomment below and comment out 'autopart' for manual control
+#
+# PowerPC requires PReP boot partition
+# part prep --fstype="PPC PReP Boot" --size=8 --ondisk=sda
+#
+# Boot partition (outside LVM)
+# part /boot --fstype="xfs" --size=1024 --ondisk=sda
+#
+# LVM Physical Volume
+# part pv.01 --fstype="lvmpv" --grow --ondisk=sda
+#
+# Volume Group
+# volgroup vg_root pv.01
+#
+# Logical Volumes
+# logvol / --fstype="xfs" --size=20480 --name=lv_root --vgname=vg_root
+# logvol /var --fstype="xfs" --size=10240 --name=lv_var --vgname=vg_root
+# logvol /home --fstype="xfs" --size=5120 --name=lv_home --vgname=vg_root
+# logvol swap --fstype="swap" --size=4096 --name=lv_swap --vgname=vg_root
+# logvol /tmp --fstype="xfs" --size=5120 --name=lv_tmp --vgname=vg_root
+
+# Bootloader configuration for Power systems (GRUB2)
+bootloader --location=mbr --boot-drive=sda --append="console=hvc0"
+
+# =============================================================================
+# Package Selection
+# =============================================================================
+
+%packages
+@^minimal-environment
+@standard
+@core
+@base
+
+# Hardware support for Power
+powerpc-utils
+powerpc-utils-core
+ppc64-diag
+librtas
+
+# Virtualization support (for LPARs)
+qemu-guest-agent
+
+# System utilities
+chrony
+rsync
+vim-enhanced
+bash-completion
+bind-utils
+net-tools
+lsof
+tcpdump
+strace
+sysstat
+sos
+
+# Security
+openssh-server
+openssh-clients
+policycoreutils-python-utils
+
+# Performance tools
+tuned
+irqbalance
+
+# Remove unnecessary packages
+-plymouth
+-plymouth-core-libs
+-plymouth-scripts
+-iwl*-firmware
+-ivtv-firmware
+-libertas-*-firmware
+-alsa-*
+
+%end
+
+# =============================================================================
+# Pre-Installation Script
+# =============================================================================
+
+%pre --log=/tmp/ks-pre.log
+#!/bin/bash
+
+echo "=== Kickstart Pre-Installation Script ==="
+echo "Architecture: $(uname -m)"
+echo "Date: $(date)"
+
+# Log available disks
+echo "Available disks:"
+lsblk
+
+# Check for Power-specific hardware
+if [ -d /proc/ppc64 ]; then
+    echo "Running on IBM Power system"
+    cat /proc/ppc64/lparcfg 2>/dev/null | grep -E "^(partition_name|serial_num|system_type)" || true
+fi
+
+%end
+
+# =============================================================================
+# Post-Installation Script
+# =============================================================================
+
+%post --log=/root/ks-post.log
+#!/bin/bash
+
+echo "=== Kickstart Post-Installation Script ==="
+echo "Date: $(date)"
+
+# =============================================================================
+# Power-specific configuration
+# =============================================================================
+
+# Enable and configure tuned for Power systems
+systemctl enable tuned
+tuned-adm profile throughput-performance
+
+# Enable irqbalance for better interrupt handling
+systemctl enable irqbalance
+
+# =============================================================================
+# Network configuration
+# =============================================================================
+
+# Ensure NetworkManager is running
+systemctl enable NetworkManager
+
+# =============================================================================
+# Security hardening
+# =============================================================================
+
+# Enable and start firewalld
+systemctl enable firewalld
+systemctl start firewalld || true
+
+# Allow SSH
+firewall-offline-cmd --add-service=ssh
+
+# =============================================================================
+# SSH configuration
+# =============================================================================
+
+# Enable SSH root login (consider disabling in production)
+sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+
+# Restart SSH to apply changes
+systemctl restart sshd || true
+
+# =============================================================================
+# System configuration
+# =============================================================================
+
+# Set console for Power systems (HVC console)
+if ! grep -q "console=hvc0" /etc/default/grub; then
+    sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="console=hvc0 /' /etc/default/grub
+    grub2-mkconfig -o /boot/grub2/grub.cfg
+fi
+
+# =============================================================================
+# Cleanup
+# =============================================================================
+
+# Clean up kickstart logs from /tmp (keep root copy)
+cp /tmp/ks-pre.log /root/ 2>/dev/null || true
+
+# Update all packages
+dnf update -y
+
+# Clean dnf cache
+dnf clean all
+
+echo "=== Post-Installation Complete ==="
+echo "System will reboot shortly..."
+
+%end
+
+# =============================================================================
+# Add-ons
+# =============================================================================
+
+%addon com_redhat_kdump --disable
+%end
+
+# Disable initial setup agent
+firstboot --disabled

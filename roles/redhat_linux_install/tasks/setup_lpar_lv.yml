@@ -1,0 +1,200 @@
+---
+# =============================================================================
+# SETUP LPAR LOGICAL VOLUME ON VIOS
+# This task file creates virtual SCSI adapters and maps a logical volume
+# from VIOS to the LPAR for use as boot disk.
+# =============================================================================
+
+# =============================================================================
+# CREATE VIRTUAL SCSI ADAPTER CONNECTION TO VIOS
+# =============================================================================
+
+- name: Calculate next available virtual slot for LPAR
+  ansible.builtin.set_fact:
+      redhat_linux_install_lpar_scsi_slot: "{{ redhat_linux_install_vscsi_client_slot | default(3) }}"
+
+- name: Calculate VIOS server adapter slot
+  vars:
+      _default_slot: "{{ (redhat_linux_install_facts_output.partition_info.PartitionID | int) + 10 }}"
+  ansible.builtin.set_fact:
+      redhat_linux_install_vios_scsi_slot: "{{ redhat_linux_install_vscsi_server_slot | default(_default_slot) }}"
+
+- name: Get VIOS partition ID from HMC
+  ansible.builtin.shell: >-
+    sshpass -p '{{ redhat_linux_install_curr_hmc_auth.password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ redhat_linux_install_curr_hmc_auth.username }}@{{ groups['hmc'][0] }}
+    "lssyscfg -r lpar -m {{ redhat_linux_install_managed_system }}
+    -F lpar_id --filter lpar_names={{ redhat_linux_install_vios_name }}"
+  register: redhat_linux_install_vios_id_result
+  changed_when: false
+
+- name: Set VIOS partition ID fact
+  ansible.builtin.set_fact:
+      redhat_linux_install_vios_id: "{{ redhat_linux_install_vios_id_result.stdout | trim }}"
+
+- name: Get LPAR profile name from HMC
+  ansible.builtin.shell: >-
+    sshpass -p '{{ redhat_linux_install_curr_hmc_auth.password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ redhat_linux_install_curr_hmc_auth.username }}@{{ groups['hmc'][0] }}
+    "lssyscfg -r prof -m {{ redhat_linux_install_managed_system }}
+    --filter lpar_names={{ redhat_linux_install_lpar_name }} -F name"
+  register: redhat_linux_install_profile_result
+  changed_when: false
+
+- name: Set LPAR profile name fact
+  ansible.builtin.set_fact:
+      redhat_linux_install_profile_name: "{{ redhat_linux_install_profile_result.stdout | trim }}"
+
+- name: Add virtual SCSI server adapter to VIOS via HMC (DLPAR - VIOS is running)
+  ansible.builtin.shell: >-
+    sshpass -p '{{ redhat_linux_install_curr_hmc_auth.password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ redhat_linux_install_curr_hmc_auth.username }}@{{ groups['hmc'][0] }}
+    "chhwres -r virtualio --rsubtype scsi -m {{ redhat_linux_install_managed_system }}
+    -o a -p {{ redhat_linux_install_vios_name }}
+    -s {{ redhat_linux_install_vios_scsi_slot }}
+    -a 'adapter_type=server,remote_lpar_name={{ redhat_linux_install_lpar_name }},remote_slot_num={{ redhat_linux_install_lpar_scsi_slot }}'"
+  register: redhat_linux_install_add_scsi_server_result
+  failed_when: >-
+    redhat_linux_install_add_scsi_server_result.rc != 0 and
+    'already exists' not in redhat_linux_install_add_scsi_server_result.stdout
+  changed_when: redhat_linux_install_add_scsi_server_result.rc == 0
+
+- name: Add virtual SCSI client adapter to LPAR profile via HMC (offline modification)
+  ansible.builtin.shell: >-
+    sshpass -p '{{ redhat_linux_install_curr_hmc_auth.password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ redhat_linux_install_curr_hmc_auth.username }}@{{ groups['hmc'][0] }}
+    "chsyscfg -r prof -m {{ redhat_linux_install_managed_system }} --force
+    -i 'name={{ redhat_linux_install_profile_name }},lpar_name={{ redhat_linux_install_lpar_name }},virtual_scsi_adapters+={{ redhat_linux_install_lpar_scsi_slot }}/client/{{ redhat_linux_install_vios_id }}/{{ redhat_linux_install_vios_name }}/{{ redhat_linux_install_vios_scsi_slot }}/0'"
+  register: redhat_linux_install_add_scsi_client_result
+  failed_when: >-
+    redhat_linux_install_add_scsi_client_result.rc != 0 and
+    'virtual adapter has been specified' not in redhat_linux_install_add_scsi_client_result.stdout
+  changed_when: redhat_linux_install_add_scsi_client_result.rc == 0
+
+- name: Wait for VIOS to recognize new virtual adapter
+  ansible.builtin.pause:
+      seconds: 5
+
+- name: Set VIOS IP address (needed for cfgdev)
+  ansible.builtin.set_fact:
+      redhat_linux_install_vios_host: "{{ redhat_linux_install_vios_ip | default(redhat_linux_install_vios_name) }}"
+
+- name: Configure new virtual adapter on VIOS (creates vhost device)
+  ansible.builtin.raw: ioscli cfgdev -dev vio0
+  delegate_to: "{{ redhat_linux_install_vios_host }}"
+  remote_user: "{{ redhat_linux_install_vios_user }}"
+  vars:
+      ansible_connection: ssh
+      ansible_ssh_pass: "{{ redhat_linux_install_vios_password }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: redhat_linux_install_cfgdev_result
+  changed_when: redhat_linux_install_cfgdev_result.rc == 0
+  failed_when: false
+
+- name: Refresh LPAR facts after adding vSCSI adapter
+  run_once: true
+  ibm.power_hmc.powervm_lpar_instance:
+      hmc_host: "{{ groups['hmc'][0] }}"
+      hmc_auth: '{{ redhat_linux_install_curr_hmc_auth }}'
+      system_name: "{{ redhat_linux_install_managed_system }}"
+      vm_name: "{{ redhat_linux_install_lpar_name }}"
+      advanced_info: true
+      state: facts
+  register: redhat_linux_install_facts_output
+
+# =============================================================================
+# CREATE VIRTUAL SCSI STORAGE ON VIOS
+# =============================================================================
+
+- name: Create logical volume on VIOS for LPAR boot disk
+  ansible.builtin.raw: >-
+    ioscli mklv -lv {{ redhat_linux_install_lpar_name }}_runix
+    {{ redhat_linux_install_vios_vg }} {{ redhat_linux_install_disk_size }}G
+  delegate_to: "{{ redhat_linux_install_vios_host }}"
+  remote_user: "{{ redhat_linux_install_vios_user }}"
+  vars:
+      ansible_connection: ssh
+      ansible_ssh_pass: "{{ redhat_linux_install_vios_password }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: redhat_linux_install_mklv_result
+  failed_when: >-
+    redhat_linux_install_mklv_result.rc != 0 and
+    'already exists' not in redhat_linux_install_mklv_result.stdout
+  changed_when: redhat_linux_install_mklv_result.rc == 0
+
+- name: Get all vhost mappings from VIOS
+  ansible.builtin.raw: ioscli lsmap -all -fmt ':'
+  delegate_to: "{{ redhat_linux_install_vios_host }}"
+  remote_user: "{{ redhat_linux_install_vios_user }}"
+  vars:
+      ansible_connection: ssh
+      ansible_ssh_pass: "{{ redhat_linux_install_vios_password }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: redhat_linux_install_lsmap_all_result
+  changed_when: false
+
+- name: Extract vhost adapter for the new LPAR by partition ID
+  ansible.builtin.set_fact:
+      redhat_linux_install_vhost_line: >-
+        {{ redhat_linux_install_lsmap_all_result.stdout_lines |
+           select('search', redhat_linux_install_partition_id_hex) |
+           first | default('') }}
+
+- name: Set vhost adapter name
+  ansible.builtin.set_fact:
+      redhat_linux_install_vhost: "{{ redhat_linux_install_vhost_line.split(':')[0] | trim }}"
+  when: redhat_linux_install_vhost_line | length > 0
+
+- name: Fail if no vhost adapter found
+  ansible.builtin.fail:
+      msg: >-
+        No vhost adapter found for LPAR {{ redhat_linux_install_lpar_name }}
+        (partition ID {{ redhat_linux_install_partition_id_hex }}).
+        Please verify the LPAR was created with a virtual SCSI adapter to VIOS {{ redhat_linux_install_vios_name }}.
+  when: redhat_linux_install_vhost is not defined or redhat_linux_install_vhost | length == 0
+
+- name: Generate short VTD name (max 15 chars, different from LV name)
+  ansible.builtin.set_fact:
+      redhat_linux_install_vtd_name: "{{ (redhat_linux_install_lpar_name | truncate(11, True, '')) }}_vtd"
+
+- name: Map logical volume to LPAR via virtual SCSI
+  ansible.builtin.raw: >-
+    ioscli mkvdev -vdev {{ redhat_linux_install_lpar_name }}_runix
+    -vadapter {{ redhat_linux_install_vhost }}
+    -dev {{ redhat_linux_install_vtd_name }}
+  delegate_to: "{{ redhat_linux_install_vios_host }}"
+  remote_user: "{{ redhat_linux_install_vios_user }}"
+  vars:
+      ansible_connection: ssh
+      ansible_ssh_pass: "{{ redhat_linux_install_vios_password }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: redhat_linux_install_mkvdev_result
+  failed_when: >-
+    redhat_linux_install_mkvdev_result.rc != 0 and
+    'already exists' not in redhat_linux_install_mkvdev_result.stdout
+  changed_when: redhat_linux_install_mkvdev_result.rc == 0
+
+- name: Verify virtual SCSI mapping
+  ansible.builtin.raw: ioscli lsmap -vadapter {{ redhat_linux_install_vhost }} -fmt ':'
+  delegate_to: "{{ redhat_linux_install_vios_host }}"
+  remote_user: "{{ redhat_linux_install_vios_user }}"
+  vars:
+      ansible_connection: ssh
+      ansible_ssh_pass: "{{ redhat_linux_install_vios_password }}"
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  register: redhat_linux_install_lsmap_result
+  changed_when: false
+
+- name: Display VIOS storage mapping
+  ansible.builtin.debug:
+      msg: |
+        VIOS Storage Configuration:
+          VIOS: {{ redhat_linux_install_vios_host }}
+          Volume Group: {{ redhat_linux_install_vios_vg }}
+          Logical Volume: {{ redhat_linux_install_lpar_name }}_runix ({{ redhat_linux_install_disk_size }}G)
+          vHost Adapter: {{ redhat_linux_install_vhost }}
+          Mapping: {{ redhat_linux_install_lsmap_result.stdout }}
