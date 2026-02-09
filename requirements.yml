@@ -1,0 +1,8 @@
+---
+# Ansible Galaxy requirements
+#
+# Install with: ansible-galaxy collection install -r requirements.yml
+
+collections:
+  - name: ibm.power_hmc
+    version: ">=1.0.0"

@@ -1,0 +1,9 @@
+set timeout=1
+menuentry 'Install OS' {
+    insmod http
+    insmod tftp
+    set root=tftp,{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}
+    echo 'Loading OS Install kernel ...'
+    linux {{ redhat_linux_install_mac_address }}/ppc/ppc64/vmlinuz ifname=net0:{{ redhat_linux_install_hardware_ethernet }} ip={{ redhat_linux_install_host_ip }}::{{ redhat_linux_install_host_gw }}:{{ redhat_linux_install_host_netmask }}:{{ redhat_linux_install_hostname }}:net0:none nameserver={{ redhat_linux_install_dns_ip }} inst.repo=http://{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}:{{ redhat_linux_install_repo_port }}/{{ redhat_linux_install_repo_dir }}/ inst.ks=http://{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}:{{ redhat_linux_install_repo_port }}/{{ redhat_linux_install_ks_file }}
+    initrd {{ redhat_linux_install_mac_address }}/ppc/ppc64/initrd.img
+}

@@ -1,0 +1,55 @@
+# Dynamic inventory for IBM Power LPARs via HMC
+# Usage: ansible-inventory -i inventory/lpars.power_hmc.yml --list
+# Or: ansible-playbook -i inventory/lpars.power_hmc.yml playbook.yml
+#
+# Note: Set HMC credentials via environment variables:
+#   export HMC_USER=admin
+#   export HMC_PASS=your_password
+#
+# IMPORTANT: LPARs müssen entweder eine RMC IP-Adresse haben oder
+# der LPAR-Name muss als Hostname auflösbar sein!
+
+plugin: ibm.power_hmc.powervm_inventory
+
+hmc_hosts:
+  - hmc: ibm-power-hmc1.coe.muc.redhat.com
+    user: "{{ lookup('env', 'HMC_USER') | default('admin', true) }}"
+    password: "{{ lookup('env', 'HMC_PASS') }}"
+
+# Include advanced fields from HMC (more LPAR properties)
+advanced_fields: true
+
+# Group LPARs by their managed system
+group_lpars_by_managed_system: true
+
+# Include all partitions (not just those with RMC IPs)
+# The ansible_host will be set to PartitionName - ensure DNS resolves these names
+# or add entries to /etc/hosts on your control node
+
+# Compose variables for each host
+# Try RMC IP first, fallback to PartitionName
+compose:
+  # Use RMC IP if available, otherwise use partition name
+  ansible_host: RMCIpAddress | default(PartitionName, true)
+  # Additional useful variables
+  lpar_name: PartitionName
+  lpar_id: PartitionID
+  lpar_state: PartitionState
+  lpar_type: PartitionType
+  managed_system: ManagedSystemName
+
+# Create groups based on OS type
+groups:
+  aix_lpars: "'AIX' in (OperatingSystemVersion | default(''))"
+  vios_lpars: "'VIOS' in (OperatingSystemVersion | default(''))"
+  linux_lpars: "'Linux' in (OperatingSystemVersion | default(''))"
+  ibmi_lpars: "'IBM i' in (OperatingSystemVersion | default(''))"
+  # Group by partition state
+  running_lpars: "PartitionState == 'running'"
+  not_activated: "PartitionState == 'not activated'"
+
+# Keyed groups - create groups based on managed system name
+keyed_groups:
+  - key: ManagedSystemName
+    prefix: system
+    separator: "_"

@@ -1,0 +1,101 @@
+---
+# Ansible Playbook: LPAR Information
+#
+# This playbook retrieves and displays detailed information about an existing
+# Linux LPAR on IBM Power systems via HMC.
+#
+# Prerequisites:
+#   1. HMC access configured in inventory (hmc group)
+#   2. ibm.power_hmc collection installed
+#
+# Usage:
+#   ansible-playbook LPAR_INFO.yml -i inventory/hosts.yml \
+#     -e "redhat_linux_install_lpar_name=my-lpar" \
+#     -e "redhat_linux_install_managed_system=power91" \
+#     -e "hmc_pass=PASSWORD"
+
+- name: Get LPAR Information
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed HMC certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # ==========================================================================
+    # HMC Authentication
+    # ==========================================================================
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+    redhat_linux_install_curr_hmc_auth:
+      username: "{{ hmc_username }}"
+      password: "{{ hmc_password }}"
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - hmc_password | length > 0
+          - redhat_linux_install_lpar_name is defined and redhat_linux_install_lpar_name | length > 0
+          - redhat_linux_install_managed_system is defined and redhat_linux_install_managed_system | length > 0
+        fail_msg: |
+          Missing required variables. Please provide:
+            - hmc_pass: HMC password
+            - redhat_linux_install_lpar_name: Name of the LPAR
+            - redhat_linux_install_managed_system: Target managed system (e.g., power91)
+
+    - name: Facts of the partition
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ groups['hmc'][0] }}"
+        hmc_auth: '{{ redhat_linux_install_curr_hmc_auth }}'
+        system_name: "{{ redhat_linux_install_managed_system }}"
+        vm_name: "{{ redhat_linux_install_lpar_name }}"
+        advanced_info: true
+        state: facts
+      register: lpar_facts
+
+    - name: Display LPAR Information
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          LPAR INFORMATION
+          ============================================
+          HMC: {{ groups['hmc'][0] }}
+          Managed System: {{ redhat_linux_install_managed_system }}
+          LPAR Name: {{ redhat_linux_install_lpar_name }}
+          ============================================
+
+    - name: Display Partition Info
+      ansible.builtin.debug:
+        var: lpar_facts.partition_info
+
+    - name: Display key LPAR parameters
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          KEY LPAR PARAMETERS
+          ============================================
+          Partition ID: {{ lpar_facts.partition_info.PartitionID | default('N/A') }}
+          Partition ID (hex): 0x{{ '%08x' % (lpar_facts.partition_info.PartitionID | int) }}
+          Partition Name: {{ lpar_facts.partition_info.PartitionName | default('N/A') }}
+          Partition State: {{ lpar_facts.partition_info.PartitionState | default('N/A') }}
+          Partition Type: {{ lpar_facts.partition_info.PartitionType | default('N/A') }}
+          OS Type: {{ lpar_facts.partition_info.OperatingSystemVersion | default('N/A') }}
+
+          --- Processor Configuration ---
+          Current Processors: {{ lpar_facts.partition_info.CurrentProcessors | default('N/A') }}
+          Pending Processors: {{ lpar_facts.partition_info.PendingProcessors | default('N/A') }}
+          Sharing Mode: {{ lpar_facts.partition_info.SharingMode | default('N/A') }}
+
+          --- Memory Configuration ---
+          Current Memory: {{ lpar_facts.partition_info.CurrentMemory | default('N/A') }} MB
+          Pending Memory: {{ lpar_facts.partition_info.PendingMemory | default('N/A') }} MB
+
+          --- Network Configuration ---
+          MAC Address: {{ lpar_facts.partition_info.PendingMACAddress | default(lpar_facts.partition_info.AssociatedManagedSystem | default('N/A')) }}
+          ============================================
+      when: lpar_facts.partition_info is defined

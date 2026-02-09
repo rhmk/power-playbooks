@@ -1,0 +1,39 @@
+# {{ ansible_managed }}
+#
+# Apache configuration for Kickstart server
+# Serves kickstart files and RHEL installation media
+#
+
+# Kickstart directory alias
+Alias /kickstart {{ kickstart_base_dir }}
+
+<Directory {{ kickstart_base_dir }}>
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+    
+    # Enable directory listing for easier debugging
+    Options +Indexes
+    IndexOptions FancyIndexing HTMLTable VersionSort
+    
+    # MIME types for kickstart files
+    AddType text/plain .cfg .ks
+</Directory>
+
+# Specific configuration for kickstart files
+<Directory {{ kickstart_base_dir }}/ks>
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+
+# RHEL repository configuration
+<Directory {{ repo_dir }}>
+    Options Indexes FollowSymLinks
+    AllowOverride None
+    Require all granted
+</Directory>
+
+# Log kickstart access separately
+CustomLog /var/log/httpd/kickstart_access.log combined env=!dontlog
+ErrorLog /var/log/httpd/kickstart_error.log

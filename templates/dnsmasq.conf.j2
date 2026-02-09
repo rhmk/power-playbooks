@@ -1,0 +1,163 @@
+# {{ ansible_managed }}
+#
+# Dnsmasq Configuration for Power LPAR Kickstart Server
+#
+# This configuration provides:
+#   - DNS caching and forwarding
+#   - Proxy DHCP for PXE boot (supplements existing DHCP server)
+#   - TFTP server for boot files
+#
+
+# =============================================================================
+# General Settings
+# =============================================================================
+
+# Don't read /etc/resolv.conf for upstream DNS
+no-resolv
+
+# Don't poll /etc/resolv.conf for changes
+no-poll
+
+# Log queries for debugging (comment out in production)
+# log-queries
+
+# Log DHCP transactions
+log-dhcp
+
+# PID file
+pid-file=/var/run/dnsmasq.pid
+
+# Run as user
+user=dnsmasq
+group=dnsmasq
+
+# =============================================================================
+# DNS Configuration (Caching & Forwarding)
+# =============================================================================
+
+# Listen on these interfaces
+interface={{ ansible_default_ipv4.interface }}
+bind-interfaces
+
+# Upstream DNS servers
+{% for dns in upstream_dns_servers | default(['8.8.8.8', '8.8.4.4']) %}
+server={{ dns }}
+{% endfor %}
+
+# DNS cache size (default is 150)
+cache-size={{ dns_cache_size | default(1000) }}
+
+# Don't forward short names
+domain-needed
+
+# Don't forward addresses in non-routed address spaces
+bogus-priv
+
+# Local domain
+local=/{{ dhcp_domain_name }}/
+domain={{ dhcp_domain_name }}
+
+# Expand simple hostnames with domain
+expand-hosts
+
+# =============================================================================
+# Proxy DHCP Configuration (PXE Boot Only)
+# =============================================================================
+# This mode supplements an existing DHCP server by providing only
+# PXE boot information (boot filename, TFTP server) without assigning IPs.
+
+# Enable proxy DHCP on the local subnet
+# Format: dhcp-range=<start>,proxy OR dhcp-range=<network>,proxy
+dhcp-range={{ ansible_default_ipv4.network }},proxy
+
+# =============================================================================
+# PXE Boot Configuration for Power Systems (ppc64le)
+# =============================================================================
+
+# TFTP server settings
+enable-tftp
+tftp-root={{ tftp_root }}
+tftp-secure
+
+# Boot file for Power systems (ppc64le / PowerPC IEEE 1275)
+# Architecture ID 00014 = PowerPC IEEE 1275 (OpenFirmware)
+# 
+# PXE client architecture types:
+#   00000 = Intel x86 BIOS
+#   00007 = EFI x86-64
+#   00009 = EFI x86-64 (alternate)
+#   00014 = PowerPC IEEE 1275 (OpenFirmware) - Power systems use this
+#
+# Match Power systems and serve GRUB2 bootloader
+dhcp-match=set:ppc64,option:client-arch,14
+dhcp-boot=tag:ppc64,grub2-ppc64le/core.elf,{{ kickstart_server_ip }},{{ kickstart_server_ip }}
+
+# Alternative: Match by vendor class (IBM Power systems)
+dhcp-vendorclass=set:ibmpower,IBM
+dhcp-boot=tag:ibmpower,grub2-ppc64le/core.elf,{{ kickstart_server_ip }},{{ kickstart_server_ip }}
+
+# Default boot file for any unmatched Power client
+# (Power systems without specific architecture tag)
+dhcp-boot=grub2-ppc64le/core.elf,{{ kickstart_server_ip }},{{ kickstart_server_ip }}
+
+# =============================================================================
+# DHCP Options for PXE
+# =============================================================================
+
+# Option 66: TFTP server name
+dhcp-option=66,{{ kickstart_server_ip }}
+
+# Option 67: Boot filename (for clients that use this)
+dhcp-option=67,grub2-ppc64le/core.elf
+
+# Option 210: GRUB2 path prefix
+dhcp-option=210,/grub2-ppc64le/
+
+# =============================================================================
+# Static Host Entries (Optional)
+# =============================================================================
+# Add DNS entries for known LPARs
+# Format: address=/hostname/IP
+
+{% if dns_static_hosts is defined %}
+{% for host in dns_static_hosts %}
+address=/{{ host.name }}.{{ dhcp_domain_name }}/{{ host.ip }}
+address=/{{ host.name }}/{{ host.ip }}
+{% endfor %}
+{% endif %}
+
+# =============================================================================
+# DHCP Host Reservations (Optional)
+# =============================================================================
+# Even in proxy mode, you can specify per-host boot options
+# Format: dhcp-host=MAC,set:tag,hostname
+
+{% if dhcp_static_hosts is defined %}
+{% for host in dhcp_static_hosts %}
+# {{ host.name }}
+dhcp-host={{ host.mac }},set:{{ host.name | replace('-', '_') }},{{ host.name }}
+{% if host.kickstart is defined %}
+# Custom boot for {{ host.name }} (if needed)
+# tag:{{ host.name | replace('-', '_') }} uses default Power boot
+{% endif %}
+{% endfor %}
+{% endif %}
+
+# =============================================================================
+# Logging
+# =============================================================================
+
+# Log to syslog facility
+log-facility=local0
+
+# =============================================================================
+# Additional Settings
+# =============================================================================
+
+# Don't store lease database (proxy mode doesn't assign IPs)
+# leasefile-ro
+
+# Strict ordering of DHCP options
+dhcp-option-force=208,f1:00:74:7e  # PXE "magic" option
+dhcp-option-force=209,grub2-ppc64le/grub.cfg  # PXE config file
+dhcp-option-force=210,/  # Path prefix

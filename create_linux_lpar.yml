@@ -1,0 +1,215 @@
+---
+# Ansible Playbook: Create Linux LPAR with Network Installation
+#
+# This playbook creates a new Linux LPAR on IBM Power systems and performs
+# an automated RHEL installation via network boot (PXE/kickstart).
+#
+# Storage: Uses virtual SCSI from VIOS - creates logical volume in datavg
+#          and maps it to the LPAR via vSCSI adapter.
+#
+# Prerequisites:
+#   1. HMC access configured in inventory (hmc group)
+#   2. Kickstart server configured and running (kickstart_servers group)
+#   3. RHEL repository available on kickstart server
+#   4. ibm.power_hmc collection installed
+#   5. VIOS accessible via SSH (padmin user)
+#   6. Volume group 'datavg' exists on VIOS with sufficient space
+#
+# Usage:
+#   ansible-playbook create_linux_lpar.yml -i inventory/hosts.yml \
+#     -e "redhat_linux_install_lpar_name=my-new-lpar" \
+#     -e "redhat_linux_install_host_ip=10.32.111.50" \
+#     -e "redhat_linux_install_hostname=my-new-lpar.power.coe.muc.redhat.com" \
+#     -e "redhat_linux_install_managed_system=power91" \
+#     -e "redhat_linux_install_network_name=VLAN1-ETHERNET0" \
+#     -e "redhat_linux_install_vios_ip=10.32.104.10" \
+#     -e "hmc_pass=PASSWORD"
+#
+# Optional variables:
+#   -e "lpar_cpu=4"                    # Number of processors (default: 2)
+#   -e "lpar_mem=8192"                 # Memory in MB (default: 4096)
+#   -e "lpar_disk=100"                 # Disk size in GB (default: 50)
+#   -e "vios_vg=datavg"               # VIOS volume group (default: data_vg)
+
+- name: Create Linux LPAR with Network Installation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed HMC certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # ==========================================================================
+    # HMC Authentication
+    # ==========================================================================
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+    redhat_linux_install_curr_hmc_auth:
+      username: "{{ hmc_username }}"
+      password: "{{ hmc_password }}"
+
+    # ==========================================================================
+    # LPAR Configuration (override via extra-vars)
+    # ==========================================================================
+    # These are the minimum required variables - set via -e or inventory
+
+    # LPAR name (required)
+    # redhat_linux_install_lpar_name: ""
+
+    # Managed system name in HMC (required)
+    # redhat_linux_install_managed_system: ""
+
+    # Virtual network name to attach (required)
+    # redhat_linux_install_network_name: ""
+
+    # ==========================================================================
+    # Network Configuration (required)
+    # ==========================================================================
+    # LPAR IP address
+    # redhat_linux_install_host_ip: ""
+
+    # FQDN of the LPAR
+    # redhat_linux_install_hostname: ""
+
+    # Gateway IP
+    redhat_linux_install_host_gw: "{{ gateway | default('10.32.111.254') }}"
+
+    # Netmask
+    redhat_linux_install_host_netmask: "{{ netmask | default('255.255.252.0') }}"
+
+    # Subnet address
+    redhat_linux_install_host_subnet: "{{ subnet | default('10.32.96.0') }}"
+
+    # DNS server IP
+    redhat_linux_install_dns_ip: "{{ dns_server | default('10.32.96.1') }}"
+
+    # ==========================================================================
+    # LPAR Resources
+    # ==========================================================================
+    # Number of processors
+    redhat_linux_install_proc: "{{ lpar_cpu | default(2) }}"
+
+    # Memory in MB
+    redhat_linux_install_mem: "{{ lpar_mem | default(4096) }}"
+
+    # Disk size in GB (for VIOS logical volume)
+    redhat_linux_install_disk_size: "{{ lpar_disk | default(50) }}"
+
+    # ==========================================================================
+    # VIOS Storage Configuration
+    # ==========================================================================
+    # VIOS partition name (required)
+    # redhat_linux_install_vios_name: ""
+
+    # VIOS IP address for SSH connection
+    # redhat_linux_install_vios_ip: ""
+
+    # Volume group on VIOS for boot LVs
+    redhat_linux_install_vios_vg: "{{ vios_vg | default('datavg') }}"
+
+    # VIOS SSH user
+    redhat_linux_install_vios_user: "{{ vios_user | default('padmin') }}"
+
+    # ==========================================================================
+    # Installation Configuration
+    # ==========================================================================
+    # RHEL distribution identifier
+    redhat_linux_install_distro: "{{ rhel_distro | default('Redhat9.6') }}"
+
+    # Repository directory path on kickstart server
+    redhat_linux_install_repo_dir: "{{ repo_dir | default('kickstart/rhel9') }}"
+
+    # Root password for the new LPAR (use vault in production!)
+    redhat_linux_install_host_password: "{{ root_password | default('changeme') }}"
+
+    # ==========================================================================
+    # PXE Configuration
+    # ==========================================================================
+    # PXE mode: "proxy" (dnsmasq) or "full" (dhcpd)
+    redhat_linux_install_pxe_mode: "{{ pxe_mode | default('proxy') }}"
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - hmc_password | length > 0
+          - redhat_linux_install_lpar_name is defined and redhat_linux_install_lpar_name | length > 0
+          - redhat_linux_install_managed_system is defined and redhat_linux_install_managed_system | length > 0
+          - redhat_linux_install_network_name is defined and redhat_linux_install_network_name | length > 0
+          - redhat_linux_install_host_ip is defined and redhat_linux_install_host_ip | length > 0
+          - redhat_linux_install_hostname is defined and redhat_linux_install_hostname | length > 0
+          - |-
+            (redhat_linux_install_vios_name is defined and redhat_linux_install_vios_name | length > 0) or
+            (redhat_linux_install_vios_ip is defined and redhat_linux_install_vios_ip | length > 0)
+        fail_msg: |
+          Missing required variables. Please provide:
+            - hmc_pass: HMC password
+            - redhat_linux_install_lpar_name: Name of the LPAR to create
+            - redhat_linux_install_managed_system: Target managed system (e.g., power91)
+            - redhat_linux_install_network_name: Virtual network name
+            - redhat_linux_install_host_ip: IP address for the new LPAR
+            - redhat_linux_install_hostname: FQDN for the new LPAR
+            - redhat_linux_install_vios_name or redhat_linux_install_vios_ip: VIOS partition name or IP
+
+    - name: Display LPAR configuration
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          LPAR Creation Configuration
+          ============================================
+          HMC: {{ groups['hmc'][0] }}
+          Managed System: {{ redhat_linux_install_managed_system }}
+          Kickstart Server: {{ groups['kickstart_servers'][0] }}
+
+          LPAR Name: {{ redhat_linux_install_lpar_name }}
+          Hostname: {{ redhat_linux_install_hostname }}
+          IP Address: {{ redhat_linux_install_host_ip }}
+
+          Resources:
+            - CPU: {{ redhat_linux_install_proc }} processors
+            - Memory: {{ redhat_linux_install_mem }} MB
+            - Disk: {{ redhat_linux_install_disk_size }} GB
+
+          VIOS Storage:
+            - VIOS: {{ redhat_linux_install_vios_ip | default(redhat_linux_install_vios_name) }}
+            - Volume Group: {{ redhat_linux_install_vios_vg }}
+            - LV Name: {{ redhat_linux_install_lpar_name }}_runix
+
+          Network:
+            - Virtual Network: {{ redhat_linux_install_network_name }}
+            - Gateway: {{ redhat_linux_install_host_gw }}
+            - Netmask: {{ redhat_linux_install_host_netmask }}
+            - DNS: {{ redhat_linux_install_dns_ip }}
+
+          Installation:
+            - Distribution: {{ redhat_linux_install_distro }}
+            - Repository: {{ redhat_linux_install_repo_dir }}
+            - PXE Mode: {{ redhat_linux_install_pxe_mode }}
+          ============================================
+
+  roles:
+    - role: redhat_linux_install
+
+  post_tasks:
+    - name: Display completion summary
+      ansible.builtin.debug:
+        msg: |
+          ============================================
+          LPAR CREATION COMPLETE
+          ============================================
+          LPAR '{{ redhat_linux_install_lpar_name }}' has been created and
+          RHEL installation has been initiated.
+
+          LPAR Details:
+            - Name: {{ redhat_linux_install_lpar_name }}
+            - IP: {{ redhat_linux_install_host_ip }}
+            - Hostname: {{ redhat_linux_install_hostname }}
+
+          Next Steps:
+            - Monitor installation progress via HMC console
+            - SSH to {{ redhat_linux_install_host_ip }} after installation
+          ============================================

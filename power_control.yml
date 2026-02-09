@@ -1,0 +1,108 @@
+---
+# Ansible Playbook: Power On/Off IBM Power Systems via HMC
+#
+# This playbook controls the power state of IBM Power servers
+# using the ibm.power_hmc collection.
+#
+# Features:
+#   - Supports multiple managed systems per HMC
+#
+# Usage examples:
+#   Power on all systems:
+#     ansible-playbook power_control.yml -e "power_state=on hmc_pass=PASSWORD"
+#
+#   Power off all systems:
+#     ansible-playbook power_control.yml -e "power_state=off hmc_pass=PASSWORD"
+#
+#   Target a specific HMC:
+#     ansible-playbook power_control.yml -l 10.32.104.241 -e "power_state=off hmc_pass=PASSWORD"
+
+- name: Control power state of IBM Power systems
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    # Power state: 'on' or 'off'
+    power_state: "on"
+
+    # HMC credentials (override via extra-vars or vault)
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+
+    # Default empty list if not defined in inventory
+    managed_systems: "{{ managed_systems_list | default([]) }}"
+
+  tasks:
+    # =========================================================================
+    # VALIDATION
+    # =========================================================================
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - power_state in ['on', 'off']
+          - hmc_password | length > 0
+          - managed_systems | length > 0
+        fail_msg: |
+          Invalid configuration:
+          - power_state must be 'on' or 'off' (current: {{ power_state }})
+          - hmc_password must be provided
+          - managed_systems list must not be empty
+
+    - name: Display operation summary
+      ansible.builtin.debug:
+        msg: |
+          HMC Host: {{ inventory_hostname }}
+          Operation: Power {{ power_state | upper }}
+          Managed Systems: {{ managed_systems | join(', ') }}
+
+    # =========================================================================
+    # POWER ON SYSTEMS
+    # =========================================================================
+    - name: Power ON managed systems
+      when: power_state == 'on'
+      ibm.power_hmc.power_system:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ item }}"
+        action: poweron
+      loop: "{{ managed_systems }}"
+      register: poweron_results
+
+    - name: Display power on results
+      when: power_state == 'on'
+      ansible.builtin.debug:
+        msg: "System {{ item.item }} power on: {{ 'SUCCESS' if not item.failed else 'FAILED' }}"
+      loop: "{{ poweron_results.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # =========================================================================
+    # POWER OFF SYSTEMS
+    # =========================================================================
+    - name: Power OFF managed systems
+      when: power_state == 'off'
+      ibm.power_hmc.power_system:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ item }}"
+        action: poweroff
+      loop: "{{ managed_systems }}"
+      register: poweroff_results
+
+    - name: Display power off results
+      when: power_state == 'off'
+      ansible.builtin.debug:
+        msg: "System {{ item.item }} power off: {{ 'SUCCESS' if not item.failed else 'FAILED' }}"
+      loop: "{{ poweroff_results.results }}"
+      loop_control:
+        label: "{{ item.item }}"

@@ -1,0 +1,92 @@
+# {{ ansible_managed }}
+#
+# GRUB2 Configuration for Power (ppc64le) Network Boot
+# This file is served via TFTP for Power LPAR kickstart installations
+#
+
+set default=0
+set timeout=60
+
+# Load required modules for network boot
+insmod net
+insmod efinet
+insmod http
+insmod linux
+
+# Menu colors
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+# =============================================================================
+# Boot Menu Entries
+# =============================================================================
+
+menuentry 'Install RHEL {{ rhel_version }} for Power (Kickstart)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel{{ rhel_major_version }} \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
+        inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel{{ rhel_major_version }}-power.cfg \
+        inst.text \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel{{ rhel_major_version }}.img
+}
+
+menuentry 'Install RHEL {{ rhel_version }} for Power (Interactive)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel{{ rhel_major_version }} \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
+        inst.text \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel{{ rhel_major_version }}.img
+}
+
+menuentry 'Install RHEL {{ rhel_version }} for Power (VNC)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel{{ rhel_major_version }} \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
+        inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel{{ rhel_major_version }}-power.cfg \
+        inst.vnc \
+        inst.vncpassword=kickstart \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel{{ rhel_major_version }}.img
+}
+
+menuentry 'Rescue Mode - RHEL {{ rhel_version }}' --class rhel --class gnu-linux {
+    echo "Loading rescue kernel..."
+    linux boot/vmlinuz-rhel{{ rhel_major_version }} \
+        inst.rescue \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel{{ rhel_major_version }}.img
+}
+
+menuentry 'Boot from local disk' {
+    echo "Booting from local disk..."
+    exit
+}
+
+# =============================================================================
+# Additional entries for other RHEL versions (uncomment as needed)
+# =============================================================================
+# menuentry 'Install RHEL 8 for Power (Kickstart)' --class rhel --class gnu-linux {
+#     linux boot/vmlinuz-rhel8 \
+#         inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel8/ \
+#         inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel8-power.cfg \
+#         ip=dhcp console=hvc0
+#     initrd boot/initrd-rhel8.img
+# }

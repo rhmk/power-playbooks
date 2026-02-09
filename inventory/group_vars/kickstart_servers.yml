@@ -1,0 +1,84 @@
+---
+# Group variables for kickstart servers
+#
+# These variables configure the kickstart server for Power LPAR provisioning.
+# Override in host_vars or via extra-vars as needed.
+#
+# NOTE: This server uses dnsmasq in PROXY DHCP mode.
+#       It supplements an existing DHCP server with PXE boot info.
+#       IP addresses are still assigned by your main DHCP server.
+
+# =============================================================================
+# RHEL Installation Media
+# =============================================================================
+
+# RHEL version to serve
+rhel_version: "9.6"
+
+# Path to RHEL ISO on the bootserver
+# Upload the ISO to this location before running the playbook
+iso_path: "/root/rhel-{{ rhel_version }}-ppc64le-dvd.iso"
+
+# =============================================================================
+# DNS Configuration (Dnsmasq)
+# =============================================================================
+
+# Upstream DNS servers for forwarding/caching
+dns_server1: "10.32.96.1"
+dns_server2: "10.32.96.31"
+
+# DNS cache size (number of entries)
+dns_cache_size: 1000
+
+# Domain name for LPARs
+domain_name: "power.coe.muc.redhat.com"
+
+# =============================================================================
+# Kickstart Defaults
+# =============================================================================
+
+# Root password for installed systems (USE VAULT IN PRODUCTION!)
+# Default: "changeme" - CHANGE THIS!
+root_password: "changeme"
+
+# Timezone
+timezone: "Europe/Berlin"
+
+# Keyboard layout
+keyboard_layout: "us"
+
+# Language
+language: "en_US.UTF-8"
+
+# =============================================================================
+# Static DNS Entries (Optional)
+# =============================================================================
+# Add DNS entries for known LPARs (resolved by dnsmasq)
+#
+# dns_static_hosts:
+#   - name: "lpar-web01"
+#     ip: "10.0.0.50"
+#   - name: "lpar-db01"
+#     ip: "10.0.0.51"
+
+# =============================================================================
+# DHCP Host Settings (Optional)
+# =============================================================================
+# Per-host boot options (dnsmasq proxy mode)
+# Note: IP addresses are assigned by your main DHCP server
+#
+# dhcp_static_hosts:
+#   - name: "lpar-web01"
+#     mac: "fa:16:3e:aa:bb:cc"
+#     kickstart: "ks-web.cfg"  # Optional custom kickstart
+#
+#   - name: "lpar-db01"
+#     mac: "fa:16:3e:dd:ee:ff"
+
+# =============================================================================
+# SSH Configuration
+# =============================================================================
+
+ansible_user: ansible
+ansible_ssh_private_key_file: ~/.ssh/id_rsa 
+ansible_become: true

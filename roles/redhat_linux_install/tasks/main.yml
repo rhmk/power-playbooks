@@ -1,0 +1,286 @@
+---
+# =============================================================================
+# CREATE LPAR WITH VIRTUAL SCSI STORAGE FROM VIOS
+# =============================================================================
+
+- name: Create new LPAR
+  run_once: true
+  ibm.power_hmc.powervm_lpar_instance:
+      hmc_host: "{{ groups['hmc'][0] }}"
+      hmc_auth: '{{ redhat_linux_install_curr_hmc_auth }}'
+      system_name: "{{ redhat_linux_install_managed_system }}"
+      vm_name: "{{ redhat_linux_install_lpar_name }}"
+      os_type: linux
+      proc: "{{ redhat_linux_install_proc }}"
+      mem: "{{ redhat_linux_install_mem }}"
+      virt_network_config:
+          - network_name: "{{ redhat_linux_install_network_name }}"
+      state: present
+  register: lpar_create_result
+
+# =============================================================================
+# GET LPAR FACTS (needed for partition ID to find vhost)
+# =============================================================================
+
+- name: Facts of the partition
+  run_once: true
+  ibm.power_hmc.powervm_lpar_instance:
+      hmc_host: "{{ groups['hmc'][0] }}"
+      hmc_auth: '{{ redhat_linux_install_curr_hmc_auth }}'
+      system_name: "{{ redhat_linux_install_managed_system }}"
+      vm_name: "{{ redhat_linux_install_lpar_name }}"
+      advanced_info: true
+      state: facts
+  register: redhat_linux_install_facts_output
+
+- name: Set LPAR partition ID in hex format
+  ansible.builtin.set_fact:
+      redhat_linux_install_partition_id_hex: "0x{{ '%08x' % (redhat_linux_install_facts_output.partition_info.PartitionID | int) }}"
+
+- name: Debug partition ID
+  ansible.builtin.debug:
+      msg: "LPAR {{ redhat_linux_install_lpar_name }} has partition ID: {{ redhat_linux_install_facts_output.partition_info.PartitionID }} (hex: {{ redhat_linux_install_partition_id_hex }})"
+
+# =============================================================================
+# SETUP LPAR LOGICAL VOLUME ON VIOS
+# =============================================================================
+
+- name: Setup LPAR logical volume and virtual SCSI mapping on VIOS
+  ansible.builtin.include_tasks: setup_lpar_lv.yml
+  tags:
+    - setup_lpar_lv
+
+# =============================================================================
+# FIND MAC ADDRESS FOR NETWORK BOOT SETUP
+# =============================================================================
+
+- name: Find MAC address for specific network
+  ansible.builtin.set_fact:
+      redhat_linux_install_mac_address: "{{ item.mac_address }}"
+  when: item.virtual_network_name == redhat_linux_install_network_name
+  loop: "{{ redhat_linux_install_facts_output.partition_info.VirtualNetworkAdapters }}"
+
+- name: Fail if MAC address is empty
+  ansible.builtin.fail:
+      msg: "MAC address not found for network: {{ redhat_linux_install_network_name }}"
+  when: redhat_linux_install_mac_address is not defined or redhat_linux_install_mac_address | length == 0
+
+- name: Convert MAC address in colon format from fact variable
+  ansible.builtin.set_fact:
+      redhat_linux_install_hardware_ethernet: "{{ redhat_linux_install_mac_address | regex_replace('(..)(..)(..)(..)(..)(..)', '\\1:\\2:\\3:\\4:\\5:\\6') }}"
+
+- name: Convert MAC address from in hyphen format from fact variable
+  ansible.builtin.set_fact:
+      redhat_linux_install_address: "{{ redhat_linux_install_mac_address | regex_replace('(..)(..)(..)(..)(..)(..)', '\\1-\\2-\\3-\\4-\\5-\\6') }}"
+
+- name: Setup PXE services on PXE server (mode {{ redhat_linux_install_pxe_mode }})
+  ansible.builtin.include_tasks: "setup_pxe_services_{{ redhat_linux_install_pxe_mode }}.yml"
+
+- name: Create Kickstart file name
+  ansible.builtin.set_fact:
+      redhat_linux_install_ks_file: "{{ redhat_linux_install_distro | regex_replace('\\.', '') }}_{{ redhat_linux_install_hardware_ethernet }}.ks"
+
+- name: Create a kickstart file in Repository server
+  run_once: true
+  ansible.builtin.template:
+      src: templates/ks.j2
+      dest: "/var/www/html/{{ redhat_linux_install_ks_file }}"
+      mode: '0777'
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Remove any existing tftp boot folder in PXE server for this VM
+  run_once: true
+  ansible.builtin.file:
+      path: "{{ redhat_linux_install_dest_dir }}"
+      state: absent
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Calculate cutdir value
+  ansible.builtin.shell: set -o pipefail && echo "{{ redhat_linux_install_repo_dir }}" | tr '/' '\n' | grep -v "^$" | wc -l
+  register: redhat_linux_install_cut_dir
+  changed_when: false
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Download files from /boot and /ppc directory in Repository Server to the PXE server tftp path(hardware address)
+  run_once: true
+  ansible.builtin.shell: >-
+    wget -r -nv --show-progress --reject="index.html*" --no-parent -nH
+    --cut-dirs={{ redhat_linux_install_cut_dir.stdout | int + 1 }}
+    http://{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}:{{ redhat_linux_install_repo_port }}/{{ redhat_linux_install_repo_dir }}/boot/
+    -P {{ redhat_linux_install_dest_dir }}
+
+  changed_when: false
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+  # noqa: command-instead-of-module wget
+
+- name: Download files from /boot and /ppc directory in Repository Server to the PXE server tftp path(hardware address)
+  run_once: true
+  ansible.builtin.shell: >-
+    wget -r -nv --show-progress --reject="index.html*" --no-parent -nH
+    --cut-dirs={{ redhat_linux_install_cut_dir.stdout | int + 1 }}
+    http://{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}:{{ redhat_linux_install_repo_port }}/{{ redhat_linux_install_repo_dir }}/ppc/
+    -P {{ redhat_linux_install_dest_dir }}
+
+  changed_when: false
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+  # noqa: command-instead-of-module wget
+
+- name: Create netboot directory in PXE server under tftp path
+  run_once: true
+  ansible.builtin.command: >
+    grub2-mknetdir
+    --net-directory={{ redhat_linux_install_base_dir }}
+    --subdir={{ redhat_linux_install_mac_address }}/boot/grub/
+  changed_when: false
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Create grub.cfg and copy to boot directory in PXE server
+  run_once: true
+  ansible.builtin.template:
+      src: templates/grub_conf.j2
+      dest: "{{ redhat_linux_install_dest_dir }}/boot/grub/grub.cfg"
+      mode: "0777"
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Copy grub.cfg to PXE server boot directory
+  run_once: true
+  ansible.builtin.command: >
+    cp "{{ redhat_linux_install_dest_dir }}/boot/grub/grub.cfg"
+       "{{ redhat_linux_install_dest_dir }}/boot/grub/powerpc-ieee1275/grub.cfg-01-{{ redhat_linux_install_address }}"
+  changed_when: false
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Stop always here
+  ansible.builtin.fail:
+      msg: "Stop always here"
+  when: false
+
+- name: Configure DHCP for LPAR (full mode with dhcpd)
+  when: redhat_linux_install_pxe_mode == 'full'
+  block:
+      - name: Backup the dhcp file, if in case this blocks add any errors
+        run_once: true
+        ansible.builtin.command: cp /etc/dhcp/dhcpd.conf /tmp/dhcpd.conf
+        changed_when: false
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: DHCP block file to add lpar entry into dhcpd.conf
+        run_once: true
+        ansible.builtin.blockinfile:
+            dest: /etc/dhcp/dhcpd.conf
+            marker: "#{mark} Ansible module dhcp entry"
+            block: "{{ lookup('template', 'dhcpd_conf.j2') }}"
+            state: present
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Restart dhcp-server
+        run_once: true
+        ansible.builtin.systemd:
+            name: dhcpd
+            state: restarted
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Configure dnsmasq for LPAR (proxy mode)
+  when: redhat_linux_install_pxe_mode == 'proxy'
+  block:
+      - name: Add LPAR host entry to dnsmasq configuration
+        run_once: true
+        ansible.builtin.lineinfile:
+            path: /etc/dnsmasq.conf
+            line: "dhcp-host={{ redhat_linux_install_hardware_ethernet }},{{ redhat_linux_install_host_ip }},{{ redhat_linux_install_hostname }}"
+            state: present
+            create: false
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Restart dnsmasq service
+        run_once: true
+        ansible.builtin.systemd:
+            name: dnsmasq
+            state: restarted
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Lparnetboot operation on target lpar # noqa: ignore-errors
+  run_once: true
+  connection: local
+  collections:
+      - ibm.power_hmc
+  powervm_lpar_instance:
+      hmc_host: "{{ groups['hmc'][0] }}"
+      hmc_auth: "{{ redhat_linux_install_curr_hmc_auth }}"
+      system_name: "{{ redhat_linux_install_managed_system }}"
+      vm_name: "{{ redhat_linux_install_lpar_name }}"
+      install_settings:
+          vm_ip: "{{ redhat_linux_install_host_ip }}"
+          nim_ip: "{{ hostvars[groups['kickstart_servers'][0]].ansible_host }}"
+          nim_gateway: "{{ redhat_linux_install_host_gw }}"
+          nim_subnetmask: "{{ redhat_linux_install_host_netmask }}"
+          vm_mac: "{{ redhat_linux_install_mac_address }}"
+          timeout: "{{ redhat_linux_install_netboot_timeout }}"
+      action: install_os
+  ignore_errors: true
+  delegate_to: "{{ groups['hmc'][0] }}"
+
+- name: Revert DHCP configuration (full mode with dhcpd)
+  when: redhat_linux_install_pxe_mode == 'full'
+  block:
+      - name: Revert the DHCP configuration changes in PXE server, take a backup of configuration file
+        run_once: true
+        ansible.builtin.command: cp /etc/dhcp/dhcpd.conf /tmp/dhcpd.conf
+        changed_when: false
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Remove LPAR entry from dhcpd.conf
+        run_once: true
+        ansible.builtin.blockinfile:
+            dest: /etc/dhcp/dhcpd.conf
+            marker: "#{mark} Ansible module dhcp entry"
+            block: "{{ lookup('template', 'dhcpd_conf.j2') }}"
+            state: absent
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Restart dhcp-server
+        run_once: true
+        ansible.builtin.systemd:
+            name: dhcpd
+            state: restarted
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Revert dnsmasq configuration (proxy mode)
+  when: redhat_linux_install_pxe_mode == 'proxy'
+  block:
+      - name: Remove LPAR host entry from dnsmasq configuration
+        run_once: true
+        ansible.builtin.lineinfile:
+            path: /etc/dnsmasq.conf
+            line: "dhcp-host={{ redhat_linux_install_hardware_ethernet }},{{ redhat_linux_install_host_ip }},{{ redhat_linux_install_hostname }}"
+            state: absent
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Restart dnsmasq service
+        run_once: true
+        ansible.builtin.systemd:
+            name: dnsmasq
+            state: restarted
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Wait for host SSH to become available after install
+  run_once: true
+  ansible.builtin.wait_for_connection:
+      timeout: "{{ redhat_linux_install_ssh_timeout }}"
+      sleep: 5
+  vars:
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      ansible_host: "{{ redhat_linux_install_host_ip }}"
+
+- name: Ensure system facts are gathered from the VM
+  run_once: true
+  ansible.builtin.setup:
+  vars:
+      ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+      ansible_host: "{{ redhat_linux_install_host_ip }}"
+  delegate_to: localhost
+
+- name: Print OS info from the VM
+  run_once: true
+  ansible.builtin.debug:
+      msg: "Distribution: {{ ansible_facts['distribution'] }}, Version: {{ ansible_facts['distribution_version'] }}"

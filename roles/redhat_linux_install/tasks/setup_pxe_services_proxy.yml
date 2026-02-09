@@ -1,0 +1,96 @@
+---
+# Setup dnsmasq as DHCP proxy and TFTP server on PXE server
+# Use this when an existing DHCP server is already handling IP assignments
+
+- name: Gather service facts
+  run_once: true
+  ansible.builtin.service_facts:
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Check if dnsmasq service is running
+  run_once: true
+  ansible.builtin.set_fact:
+      redhat_linux_install_dnsmasq_running: "{{ 'dnsmasq.service' in services and services['dnsmasq.service'].state == 'running' }}"
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Install and configure dnsmasq as DHCP proxy
+  when: not redhat_linux_install_dnsmasq_running
+  block:
+      - name: Install dnsmasq package
+        ansible.builtin.dnf:
+            name:
+                - dnsmasq
+            state: present
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Ensure TFTP root directory exists
+        ansible.builtin.file:
+            path: "{{ redhat_linux_install_base_dir }}"
+            state: directory
+            owner: root
+            group: root
+            mode: '0755'
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Backup existing dnsmasq configuration
+        ansible.builtin.copy:
+            src: /etc/dnsmasq.conf
+            dest: /etc/dnsmasq.conf.backup
+            remote_src: true
+            mode: '0644'
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+        ignore_errors: true
+
+      - name: Configure dnsmasq as DHCP proxy and TFTP server
+        ansible.builtin.template:
+            src: templates/dnsmasq_proxy.conf.j2
+            dest: /etc/dnsmasq.conf
+            owner: root
+            group: root
+            mode: '0644'
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Enable and start dnsmasq service
+        ansible.builtin.systemd:
+            name: dnsmasq
+            state: started
+            enabled: true
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Open DHCP proxy port (4011) in firewall
+  ansible.posix.firewalld:
+      port: 4011/udp
+      permanent: true
+      state: enabled
+      immediate: true
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Open TFTP port in firewall
+  ansible.posix.firewalld:
+      service: tftp
+      permanent: true
+      state: enabled
+      immediate: true
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Open DNS port in firewall (for dnsmasq)
+  ansible.posix.firewalld:
+      service: dns
+      permanent: true
+      state: enabled
+      immediate: true
+  delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+- name: Install additional tools for PXE boot
+  block:
+      - name: Install grub2-tools-extra package
+        ansible.builtin.dnf:
+            name: grub2-tools-extra
+            state: present
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"
+
+      - name: Install wget package
+        ansible.builtin.dnf:
+            name: wget
+            state: present
+        delegate_to: "{{ groups['kickstart_servers'][0] }}"

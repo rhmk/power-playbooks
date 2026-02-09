@@ -1,0 +1,36 @@
+# dnsmasq configuration for DHCP proxy mode (PXE boot)
+# This does NOT assign IP addresses - it only responds to PXE boot requests
+
+# Disable DNS functionality (we only need DHCP proxy and TFTP)
+port=0
+
+# Enable DHCP proxy mode on the specified interface
+# Responds to PXE requests without assigning IP addresses
+interface={{ redhat_linux_install_pxe_interface | default('*') }}
+dhcp-range={{ redhat_linux_install_host_subnet }},proxy
+
+# TFTP server settings
+enable-tftp
+tftp-root={{ redhat_linux_install_base_dir }}
+
+# PXE boot configuration for IBM Power (PowerPC)
+# Tag for PowerPC architecture (architecture code 0x0E = 14)
+dhcp-match=set:ppc64,option:client-arch,14
+
+# Boot file for PowerPC clients
+dhcp-boot=tag:ppc64,{{ redhat_linux_install_core_file_path }}
+
+# Log DHCP transactions for debugging
+log-dhcp
+
+# Logging facility
+log-facility=/var/log/dnsmasq.log
+
+# Don't read /etc/resolv.conf
+no-resolv
+
+# Don't poll /etc/resolv.conf for changes
+no-poll
+
+# Increase cache size
+cache-size=1000
