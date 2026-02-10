@@ -1,0 +1,46 @@
+---
+# Rolle: register_lpar_pxe
+# Für eine gegebene LPAR: MAC von HMC holen, TFTP-Struktur, Kickstart-Datei und
+# DHCP-Konfiguration (ISC oder KEA DHCP4) anlegen.
+
+# =============================================================================
+# HMC (für LPAR-Facts / MAC)
+# =============================================================================
+# pxe_register_hmc_host, pxe_register_hmc_username, pxe_register_hmc_password
+# pxe_register_managed_system, pxe_register_lpar_name, pxe_register_network_name
+# → Pflicht, keine Defaults
+
+# =============================================================================
+# Kickstart-Server (Ziel für TFTP/Kickstart/DHCP)
+# =============================================================================
+# Host aus Inventory: groups['kickstart_servers'][0] oder pxe_register_kickstart_server
+pxe_register_repo_port: 80
+pxe_register_base_dir: /var/www/html
+pxe_register_tftp_base_dir: /var/lib/tftpboot/
+pxe_register_repo_dir: "kickstart/rhel9"
+pxe_register_distro: "Redhat9.6"
+
+# =============================================================================
+# LPAR Netzwerk (alle Pflicht außer Defaults)
+# =============================================================================
+# pxe_register_host_ip, pxe_register_hostname, pxe_register_host_gw,
+# pxe_register_host_netmask, pxe_register_host_subnet, pxe_register_dns_ip
+# Optional default for DNS:
+# pxe_register_dns_ip: "10.32.96.1"
+
+# =============================================================================
+# Kickstart
+# =============================================================================
+pxe_register_root_password: "changeme"
+
+# =============================================================================
+# DHCP-Backend: isc | kea4
+# =============================================================================
+pxe_register_dhcp_backend: isc
+
+# KEA DHCP4: Pfad zur Reservations-Datei
+pxe_register_kea_reservations_file: "/etc/kea/kea-dhcp4-reservations-manual.conf"
+pxe_register_domain_name: "coe.muc.redhat.com"
+
+# ISC DHCP: dhcpd.conf wird per blockinfile ergänzt
+# (next-server/filename kommen aus kickstart server)

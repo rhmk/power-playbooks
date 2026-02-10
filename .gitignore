@@ -54,5 +54,7 @@ __pycache__/
 # vi swap file
 *.swp
 
-# private-configfiles
+# Private config with secrets – must not be committed or deployed
+my_lpar_cfg.yml
+lpar_config.yml
 my*.yml

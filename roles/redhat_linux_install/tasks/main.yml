@@ -150,11 +150,8 @@
   changed_when: false
   delegate_to: "{{ groups['kickstart_servers'][0] }}"
 
-- name: Stop always here
-  ansible.builtin.fail:
-      msg: "Stop always here"
-  when: false
 
+#== Ab hier erfolgt DHCP CONFIGURATION ==
 - name: Configure DHCP for LPAR (full mode with dhcpd)
   when: redhat_linux_install_pxe_mode == 'full'
   block:

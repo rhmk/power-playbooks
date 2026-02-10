@@ -1,0 +1,139 @@
+---
+# yamllint disable rule:quoted-strings
+# =============================================================================
+# SETUP RHEL PXE STRUCTURE – aus ISO: Webserver-Repo + TFTP-Basis
+# =============================================================================
+
+- name: Validate architecture (ppc64le)
+  ansible.builtin.assert:
+    that:
+      - ansible_architecture == "ppc64le"
+    fail_msg: "This role is for Power (ppc64le). Current: {{ ansible_architecture }}"
+
+- name: Check if ISO file exists  # noqa: var-naming
+  ansible.builtin.stat:
+    path: "{{ setup_rhel_pxe_structure_iso_path }}"
+  register: setup_rhel_pxe_structure_iso_stat
+
+- name: Fail if ISO not found and require_iso is true
+  ansible.builtin.fail:
+    msg: "ISO not found at {{ setup_rhel_pxe_structure_iso_path }}. Set setup_rhel_pxe_structure_iso_path or setup_rhel_pxe_structure_require_iso: false."
+  when: setup_rhel_pxe_structure_require_iso and not setup_rhel_pxe_structure_iso_stat.stat.exists
+
+# =============================================================================
+# Pakete
+# =============================================================================
+- name: Install packages for PXE structure
+  ansible.builtin.dnf:
+    name:
+      - httpd
+      - grub2-tools
+      - grub2-tools-extra
+      - rsync
+    state: present
+
+# =============================================================================
+# Verzeichnisstruktur
+# =============================================================================
+- name: Create directory structure for kickstart and TFTP  # noqa: file-permissions (mode set in role)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+  loop:
+    - "{{ setup_rhel_pxe_structure_kickstart_base_dir }}"
+    - "{{ setup_rhel_pxe_structure_kickstart_base_dir }}/ks"
+    - "{{ setup_rhel_pxe_structure_repo_dir }}"
+    - "{{ setup_rhel_pxe_structure_tftp_root }}"
+    - "{{ setup_rhel_pxe_structure_tftp_root }}/grub2-ppc64le"
+    - "{{ setup_rhel_pxe_structure_tftp_root }}/boot"
+
+- name: Create ISO mount point
+  ansible.builtin.file:
+    path: "{{ setup_rhel_pxe_structure_iso_mount_point }}"
+    state: directory
+    mode: "0755"
+    owner: root
+    group: root
+
+# =============================================================================
+# ISO mounten und Inhalt ins Repo syncen
+# =============================================================================
+- name: Mount RHEL ISO
+  ansible.posix.mount:
+    path: "{{ setup_rhel_pxe_structure_iso_mount_point }}"
+    src: "{{ setup_rhel_pxe_structure_iso_path }}"
+    fstype: iso9660
+    opts: loop,ro
+    state: mounted
+  when: setup_rhel_pxe_structure_iso_stat.stat.exists
+
+- name: Sync ISO content to repo directory  # noqa: file-permissions (dest is dir, mode set on repo_dir after)
+  ansible.builtin.synchronize:
+    src: "{{ setup_rhel_pxe_structure_iso_mount_point }}/"
+    dest: "{{ setup_rhel_pxe_structure_repo_dir }}/"
+  when: setup_rhel_pxe_structure_iso_stat.stat.exists
+
+- name: Set permissions on repo directory
+  ansible.builtin.file:
+    path: "{{ setup_rhel_pxe_structure_repo_dir }}"
+    state: directory
+    mode: "0755"
+    recurse: true
+  when: setup_rhel_pxe_structure_iso_stat.stat.exists
+
+# =============================================================================
+# GRUB2 für ppc64le Network Boot
+# =============================================================================
+- name: Copy GRUB2 bootloader for ppc64le  # noqa: no-failed-when
+  ansible.builtin.copy:
+    src: "/usr/share/grub/powerpc-ieee1275/"
+    dest: "{{ setup_rhel_pxe_structure_tftp_root }}/grub2-ppc64le/"
+    remote_src: true
+    mode: "0644"
+  failed_when: false
+
+- name: Create GRUB2 network boot layout (grub2-mknetdir)
+  ansible.builtin.shell: >
+    grub2-mknetdir --net-directory={{ setup_rhel_pxe_structure_tftp_root }} --subdir=/grub2-ppc64le
+  args:
+    creates: "{{ setup_rhel_pxe_structure_tftp_root }}/grub2-ppc64le/powerpc-ieee1275/core.elf"
+  failed_when: false
+  changed_when: false
+
+# =============================================================================
+# Kernel und Initrd für Network Boot
+# =============================================================================
+- name: Copy kernel and initrd for network boot
+  ansible.builtin.copy:
+    src: "{{ item.src }}"
+    dest: "{{ item.dest }}"
+    remote_src: true
+    mode: "0644"
+  loop:
+    - src: "{{ setup_rhel_pxe_structure_repo_dir }}/ppc/ppc64/vmlinuz"
+      dest: "{{ setup_rhel_pxe_structure_tftp_root }}/boot/vmlinuz-rhel{{ setup_rhel_pxe_structure_rhel_major_version }}"
+    - src: "{{ setup_rhel_pxe_structure_repo_dir }}/ppc/ppc64/initrd.img"
+      dest: "{{ setup_rhel_pxe_structure_tftp_root }}/boot/initrd-rhel{{ setup_rhel_pxe_structure_rhel_major_version }}.img"
+  when: setup_rhel_pxe_structure_iso_stat.stat.exists
+
+# =============================================================================
+# Optional: generische GRUB-Konfiguration für TFTP (ohne LPAR)
+# =============================================================================
+- name: Create generic GRUB config for Power network boot
+  ansible.builtin.template:
+    src: grub_generic.cfg.j2
+    dest: "{{ setup_rhel_pxe_structure_tftp_root }}/grub2-ppc64le/grub.cfg"
+    mode: "0644"
+  when: setup_rhel_pxe_structure_grub_generic | default(false) | bool
+
+- name: Display PXE structure summary
+  ansible.builtin.debug:
+    msg: |
+      PXE structure ready:
+        Repo: {{ setup_rhel_pxe_structure_repo_dir }}
+        TFTP root: {{ setup_rhel_pxe_structure_tftp_root }}
+        GRUB2: {{ setup_rhel_pxe_structure_tftp_root }}/grub2-ppc64le
+        Boot: {{ setup_rhel_pxe_structure_tftp_root }}/boot (vmlinuz, initrd)

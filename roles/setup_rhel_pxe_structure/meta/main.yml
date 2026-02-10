@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: power-playbooks
+  description: Prepare RHEL PXE structure from ISO (webserver repo + TFTP base, GRUB2 ppc64le)
+  license: GPL-3.0-or-later
+  min_ansible_version: ">=2.14.0"
+  galaxy_tags:
+    - ibm
+    - power
+    - pxe
+    - kickstart
+    - rhel

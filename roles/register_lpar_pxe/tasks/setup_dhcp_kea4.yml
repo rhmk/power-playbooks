@@ -1,0 +1,27 @@
+---
+# KEA DHCP4: Reservation in kea-dhcp4-reservations-manual.conf eintragen
+# Format: JSON-Objekt pro LPAR (wird in "reservations"-Array eingetragen).
+# Die Datei kann von der Haupt-kea-dhcp4.conf per reservation-files eingebunden werden.
+
+- name: Ensure KEA reservations file directory exists
+  ansible.builtin.file:
+    path: "{{ pxe_register_kea_reservations_file | dirname }}"
+    state: directory
+    mode: "0755"
+  delegate_to: "{{ pxe_register_kickstart_host }}"
+
+- name: Add LPAR reservation to kea-dhcp4-reservations-manual.conf
+  ansible.builtin.blockinfile:
+    path: "{{ pxe_register_kea_reservations_file }}"
+    marker: "# {mark} ANSIBLE register_lpar_pxe {{ pxe_register_lpar_name }}"
+    block: "{{ lookup('template', 'kea_dhcp4_reservation.j2') }}"
+    state: present
+    create: true
+  delegate_to: "{{ pxe_register_kickstart_host }}"
+
+- name: Restart kea-dhcp4 (if running)
+  ansible.builtin.systemd:
+    name: kea-dhcp4-server
+    state: restarted
+  delegate_to: "{{ pxe_register_kickstart_host }}"
+  ignore_errors: true

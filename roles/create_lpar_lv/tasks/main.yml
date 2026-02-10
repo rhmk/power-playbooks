@@ -1,10 +1,10 @@
 ---
 # yamllint disable rule:quoted-strings
 # =============================================================================
-# CREATE LPAR LOGICAL VOLUME ON VIOS (Standalone Role)
+# CREATE LPAR LOGICAL VOLUME ON VIOS (nur HMC-Verbindung)
 # =============================================================================
-# Erstellt vSCSI-Adapter (LPAR <-> VIOS), Logical Volume auf VIOS und
-# mappt das LV an die LPAR.
+# Alle VIOS-Befehle werden per viosvrcmd von der HMC ausgeführt.
+# Es wird nur eine Verbindung (zur HMC) benötigt.
 # =============================================================================
 
 - name: Validate required variables
@@ -16,12 +16,11 @@
       - create_lpar_lv_volume_group is defined and create_lpar_lv_volume_group | length > 0
       - create_lpar_lv_vios_name is defined and create_lpar_lv_vios_name | length > 0
       - create_lpar_lv_hmc_password is defined and create_lpar_lv_hmc_password | length > 0
-      - create_lpar_lv_vios_password is defined and create_lpar_lv_vios_password | length > 0
     fail_msg: |
       Fehlende Pflichtvariablen. Bitte setzen:
         create_lpar_lv_lpar_name, create_lpar_lv_managed_system,
         create_lpar_lv_volume_name, create_lpar_lv_volume_group,
-        create_lpar_lv_vios_name, create_lpar_lv_hmc_password, create_lpar_lv_vios_password
+        create_lpar_lv_vios_name, create_lpar_lv_hmc_password
 
 # =============================================================================
 # LPAR-Facts vom HMC holen (für PartitionID)
@@ -60,7 +59,7 @@
     create_lpar_lv_vios_scsi_slot: "{{ create_lpar_lv_vscsi_server_slot | default((create_lpar_lv_facts_output.partition_info.PartitionID | int) + 10) }}"
 
 # =============================================================================
-# VIOS Partition ID und LPAR-Profilname vom HMC
+# VIOS Partition ID und LPAR-Profilname (Shell auf HMC)
 # =============================================================================
 
 - name: Get VIOS partition ID from HMC  # noqa: command-instead-of-shell
@@ -135,17 +134,15 @@
     seconds: 5
 
 # =============================================================================
-# Neuen virtuellen Adapter auf VIOS konfigurieren (vhost)
+# VIOS-Befehle per viosvrcmd von der HMC ausführen (keine VIOS-SSH-Verbindung)
 # =============================================================================
 
-- name: Configure new virtual adapter on VIOS (creates vhost device)
-  ansible.builtin.raw: ioscli cfgdev -dev vio0
-  delegate_to: "{{ create_lpar_lv_vios_host }}"
-  remote_user: "{{ create_lpar_lv_vios_user }}"
-  vars:
-    ansible_connection: ssh
-    ansible_ssh_pass: "{{ create_lpar_lv_vios_password }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+- name: Configure new virtual adapter on VIOS (viosvrcmd – creates vhost)
+  ansible.builtin.shell: >-
+    sshpass -p '{{ create_lpar_lv_hmc_password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ create_lpar_lv_hmc_username }}@{{ create_lpar_lv_hmc_host }}
+    "viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c 'ioscli cfgdev -dev vio0'"
   register: create_lpar_lv_cfgdev_result
   changed_when: create_lpar_lv_cfgdev_result.rc == 0
   failed_when: false
@@ -160,26 +157,21 @@
     state: facts
   register: create_lpar_lv_facts_output
 
-# Partition-ID-Hex ist unverändert
 - name: Re-set partition ID hex after refresh
   ansible.builtin.set_fact:
     create_lpar_lv_partition_id_hex: "{{ ('0x%08x' | format(create_lpar_lv_facts_output.partition_info.PartitionID | default(0) | int)) }}"
   when: create_lpar_lv_facts_output.partition_info is defined
 
 # =============================================================================
-# Logical Volume auf VIOS anlegen
+# Logical Volume auf VIOS (viosvrcmd)
 # =============================================================================
 
-- name: Create logical volume on VIOS
-  ansible.builtin.raw: >-
-    ioscli mklv -lv {{ create_lpar_lv_volume_name }}
-    {{ create_lpar_lv_volume_group }} {{ create_lpar_lv_disk_size_gb }}G
-  delegate_to: "{{ create_lpar_lv_vios_host }}"
-  remote_user: "{{ create_lpar_lv_vios_user }}"
-  vars:
-    ansible_connection: ssh
-    ansible_ssh_pass: "{{ create_lpar_lv_vios_password }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+- name: Create logical volume on VIOS via viosvrcmd
+  ansible.builtin.shell: >-
+    sshpass -p '{{ create_lpar_lv_hmc_password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ create_lpar_lv_hmc_username }}@{{ create_lpar_lv_hmc_host }}
+    "viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c 'ioscli mklv -lv {{ create_lpar_lv_volume_name }} {{ create_lpar_lv_volume_group }} {{ create_lpar_lv_disk_size_gb }}G'"
   register: create_lpar_lv_mklv_result
   failed_when: >-
     create_lpar_lv_mklv_result.rc != 0 and
@@ -187,17 +179,15 @@
   changed_when: create_lpar_lv_mklv_result.rc == 0
 
 # =============================================================================
-# vhost-Adapter für diese LPAR finden (über Partition-ID)
+# vhost-Adapter finden (viosvrcmd lsmap)
 # =============================================================================
 
-- name: Get all vhost mappings from VIOS
-  ansible.builtin.raw: ioscli lsmap -all -fmt ':'
-  delegate_to: "{{ create_lpar_lv_vios_host }}"
-  remote_user: "{{ create_lpar_lv_vios_user }}"
-  vars:
-    ansible_connection: ssh
-    ansible_ssh_pass: "{{ create_lpar_lv_vios_password }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+- name: Get all vhost mappings from VIOS via viosvrcmd
+  ansible.builtin.shell: >-
+    sshpass -p '{{ create_lpar_lv_hmc_password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ create_lpar_lv_hmc_username }}@{{ create_lpar_lv_hmc_host }}
+    "viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c \"ioscli lsmap -all -fmt ':'\""
   register: create_lpar_lv_lsmap_all_result
   changed_when: false
 
@@ -230,20 +220,15 @@
     create_lpar_lv_vtd_name: "{{ create_lpar_lv_vtd_name | default((create_lpar_lv_lpar_name | truncate(11, True, '')) + '_vtd') }}"
 
 # =============================================================================
-# LV an vhost mappen (mkvdev)
+# LV an vhost mappen (viosvrcmd mkvdev)
 # =============================================================================
 
-- name: Map logical volume to LPAR via virtual SCSI
-  ansible.builtin.raw: >-
-    ioscli mkvdev -vdev {{ create_lpar_lv_volume_name }}
-    -vadapter {{ create_lpar_lv_vhost }}
-    -dev {{ create_lpar_lv_vtd_name }}
-  delegate_to: "{{ create_lpar_lv_vios_host }}"
-  remote_user: "{{ create_lpar_lv_vios_user }}"
-  vars:
-    ansible_connection: ssh
-    ansible_ssh_pass: "{{ create_lpar_lv_vios_password }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+- name: Map logical volume to LPAR via virtual SCSI (viosvrcmd)
+  ansible.builtin.shell: >-
+    sshpass -p '{{ create_lpar_lv_hmc_password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ create_lpar_lv_hmc_username }}@{{ create_lpar_lv_hmc_host }}
+    "viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c 'ioscli mkvdev -vdev {{ create_lpar_lv_volume_name }} -vadapter {{ create_lpar_lv_vhost }} -dev {{ create_lpar_lv_vtd_name }}'"
   register: create_lpar_lv_mkvdev_result
   failed_when: >-
     create_lpar_lv_mkvdev_result.rc != 0 and
@@ -254,23 +239,21 @@
 # Verifizierung & Ausgabe
 # =============================================================================
 
-- name: Verify virtual SCSI mapping
-  ansible.builtin.raw: ioscli lsmap -vadapter {{ create_lpar_lv_vhost }} -fmt ':'
-  delegate_to: "{{ create_lpar_lv_vios_host }}"
-  remote_user: "{{ create_lpar_lv_vios_user }}"
-  vars:
-    ansible_connection: ssh
-    ansible_ssh_pass: "{{ create_lpar_lv_vios_password }}"
-    ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+- name: Verify virtual SCSI mapping via viosvrcmd
+  ansible.builtin.shell: >-
+    sshpass -p '{{ create_lpar_lv_hmc_password }}'
+    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
+    {{ create_lpar_lv_hmc_username }}@{{ create_lpar_lv_hmc_host }}
+    "viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c \"ioscli lsmap -vadapter {{ create_lpar_lv_vhost }} -fmt ':'\""
   register: create_lpar_lv_lsmap_result
   changed_when: false
 
 - name: Display VIOS storage mapping summary
   ansible.builtin.debug:
     msg: |
-      create_lpar_lv – VIOS Storage:
+      create_lpar_lv – VIOS Storage (via HMC):
         LPAR: {{ create_lpar_lv_lpar_name }}
-        VIOS: {{ create_lpar_lv_vios_host }}
+        VIOS: {{ create_lpar_lv_vios_name }}
         Volume Group: {{ create_lpar_lv_volume_group }}
         Logical Volume: {{ create_lpar_lv_volume_name }} ({{ create_lpar_lv_disk_size_gb }}G)
         vHost Adapter: {{ create_lpar_lv_vhost }}

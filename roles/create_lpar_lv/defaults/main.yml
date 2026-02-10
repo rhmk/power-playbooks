@@ -11,7 +11,7 @@
 #   create_lpar_lv_volume_group    - Volume Group auf der VIOS
 #   create_lpar_lv_vios_name       - VIOS-Partition (z.B. power91-vios)
 #   create_lpar_lv_hmc_password    - HMC-Passwort (SSH)
-#   create_lpar_lv_vios_password   - VIOS-Passwort (SSH, User padmin)
+# VIOS-SSH wird nicht mehr genutzt; alle VIOS-Befehle laufen per viosvrcmd von der HMC.
 #
 # Optional (mit Default):
 #   create_lpar_lv_hmc_host        - HMC-Host (Default: inventory_hostname bei hosts: hmc)
@@ -48,9 +48,8 @@ create_lpar_lv_disk_size_gb: 50
 # VIOS
 # =============================================================================
 # create_lpar_lv_vios_name: ""        # Pflicht, z.B. power91-vios
-# create_lpar_lv_vios_ip: ""         # Optional, sonst wird vios_name für SSH genutzt
-create_lpar_lv_vios_user: padmin
-# create_lpar_lv_vios_password: ""   # Pflicht
+# create_lpar_lv_vios_ip: ""         # Optional (nur für Anzeige)
+# create_lpar_lv_vios_user / vios_password: nicht mehr benötigt (viosvrcmd von HMC)
 
 # =============================================================================
 # Virtual SCSI Slots (optional)
