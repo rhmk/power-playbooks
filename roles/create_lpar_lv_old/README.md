@@ -1,11 +1,11 @@
 # Role: create_lpar_lv
 
-Erstellt auf einer VIOS ein Logical Volume, legt die virtuellen SCSI-Adapter (LPAR ↔ VIOS) an und mappt das LV als virtuelles SCSI-Laufwerk an die LPAR. Die Rolle kann in einem Playbook mit `hosts: hmc` ausgeführt werden; es wird nur eine SSH-Verbindung zur HMC benötigt. VIOS-Befehle werden per `viosvrcmd` von der HMC ausgeführt.
+Erstellt auf einer VIOS ein Logical Volume, legt die virtuellen SCSI-Adapter (LPAR ↔ VIOS) an und mappt das LV als virtuelles SCSI-Laufwerk an die LPAR. Die Rolle kann in einem Playbook mit `hosts: hmc` ausgeführt werden; die Steuerung erfolgt vom Ansible Control Node aus per SSH zur HMC und zur VIOS.
 
 ## Abhängigkeiten
 
 - Ansible Collection **ibm.power_hmc** (z.B. `ansible-galaxy collection install -r requirements.yml`)
-- **sshpass** auf dem Control Node (für HMC-SSH mit Passwort)
+- **sshpass** auf dem Control Node (für HMC-/VIOS-SSH mit Passwort)
 
 ## Pflichtparameter
 
@@ -27,6 +27,9 @@ Es wird nur eine Verbindung (zur HMC) benötigt. VIOS-Befehle laufen per **viosv
 | `create_lpar_lv_hmc_host` | `inventory_hostname` | HMC-Hostname oder IP (wenn Playbook `hosts: hmc` hat, ist das der jeweilige HMC-Host) |
 | `create_lpar_lv_hmc_username` | `hmc_user` / `hscroot` | HMC-Benutzer |
 | `create_lpar_lv_disk_size_gb` | `50` | Größe des Logical Volume in GB |
+| `create_lpar_lv_vios_ip` | – | Nur für Anzeige; VIOS-Zugriff erfolgt per viosvrcmd von der HMC |
+| `create_lpar_lv_vscsi_client_slot` | `3` | Slot-Nummer des virtuellen SCSI-Client-Adapters an der LPAR |
+| `create_lpar_lv_vscsi_server_slot` | (PartitionID + 10) | Slot-Nummer des virtuellen SCSI-Server-Adapters an der VIOS |
 | `create_lpar_lv_vtd_name` | abgeleitet aus LPAR-Name | VTD-Name für das Mapping (max. 15 Zeichen) |
 
 ## Verwendung
@@ -50,10 +53,5 @@ Oder Variablen in `group_vars/hmc/` / Vault ablegen und nur Playbook ausführen.
 ## Hinweise
 
 - **Nur HMC:** Alle VIOS-Befehle laufen per `viosvrcmd -m <managed_system> -p <vios_name> -c "ioscli ..."` auf der HMC; keine separate VIOS-SSH-Verbindung.
-- **Slots:** Werden automatisch per `next_avail_virtual_slot` ermittelt – sowohl für die LPAR als auch für den VIOS.
-- **Rollback bei Fehler:** Alle ändernden Operationen sind in einem `block/rescue` gekapselt. Tritt ein Fehler auf, werden bereits angelegte Ressourcen in umgekehrter Reihenfolge automatisch aufgeräumt:
-  1. VTD-Mapping entfernen (`rmvdev`)
-  2. Logical Volume entfernen (`rmlv`)
-  3. vSCSI Client-Adapter aus LPAR-Profil entfernen (`chsyscfg virtual_scsi_adapters-=`)
-  4. vSCSI Server-Adapter vom VIOS entfernen (`chhwres -o r`)
+- **Slots:** Wenn die LPAR bereits einen vSCSI-Client auf Slot 3 hat, einen anderen freien Slot mit `create_lpar_lv_vscsi_client_slot` wählen (bzw. passenden Server-Slot mit `create_lpar_lv_vscsi_server_slot`).
 - **Passwörter:** In Produktion `create_lpar_lv_hmc_password` per Ansible Vault setzen.

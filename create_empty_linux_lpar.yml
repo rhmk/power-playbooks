@@ -11,15 +11,18 @@
 #   3. Virtual network must be configured on the managed system
 #
 # Usage:
-#   ansible-playbook create_linux_lpar.yml \
+#   ansible-playbook create_empty_linux_lpar.yml \
 #     -e "lpar_name=rhel-server01" \
+#     -e "managed_system=power91" \
+#     -e "vios_name=power91-vios" \
+#     -e "vios_volume_group=datavg" \
 #     -e "lpar_cpu=4" \
 #     -e "lpar_mem=8192" \
 #     -e "lpar_disk=50" \
-#     -e "hmc_pass=PASSWORD"
+#     -e "hmc_password=PASSWORD"
 
 - name: Create Linux LPAR for RHEL DVD or Network installation
-  hosts: hmc
+  hosts: localhost
   connection: local
   gather_facts: false
 
@@ -64,27 +67,30 @@
     # VIOS and Network Configuration
     # ==========================================================================
 
-    # VIOS partition name (for virtual SCSI mapping)
-    # vios_name: "{{ vios_partition | default('power91-vios') }}"
+    # VIOS partition name (required, for virtual SCSI mapping)
+    vios_name: ""
+
+    # Volume group on VIOS for logical volume creation (required)
+    vios_volume_group: ""
 
     # Virtual network name (must exist on managed system)
-    virtual_network: "{{ vnet_name | default('VLAN1-ETHERNET0') }}"
+    virtual_network: VLAN1-ETHERNET0
 
     # VLAN ID (optional, 0 for untagged)
-    vlan_id: "{{ vnet_vlan | default(1) }}"
+    vlan_id: 1
 
     # ==========================================================================
     # Target System
     # ==========================================================================
 
-    # Managed system (first from inventory if not specified)
-    managed_system: "{{ target_system | default(managed_systems_list[0]) }}"
+    # Managed system (required)
+    managed_system: ""
 
     # ==========================================================================
     # HMC Credentials
     # ==========================================================================
-    hmc_username: "{{ hmc_user | default('hscroot') }}"
-    hmc_password: "{{ hmc_pass | default('') }}"
+    hmc_username: hscroot
+    hmc_password: ""
 
   tasks:
     # =========================================================================
@@ -95,6 +101,9 @@
         that:
           - hmc_password | length > 0
           - lpar_name | length > 0
+          - managed_system | length > 0
+          - vios_name | length > 0
+          - vios_volume_group | length > 0
           - lpar_cpu | int > 0
           - lpar_mem | int >= 1024
           - lpar_disk | int > 0
@@ -102,6 +111,9 @@
           Invalid configuration:
           - hmc_password must be provided
           - lpar_name must be provided (current: '{{ lpar_name }}')
+          - managed_system must be provided (current: '{{ managed_system }}')
+          - vios_name must be provided (current: '{{ vios_name }}')
+          - vios_volume_group must be provided (current: '{{ vios_volume_group }}')
           - lpar_cpu must be > 0 (current: {{ lpar_cpu }})
           - lpar_mem must be >= 1024 MB (current: {{ lpar_mem }})
           - lpar_disk must be > 0 GB (current: {{ lpar_disk }})
@@ -114,7 +126,7 @@
           ============================================
           HMC Host: {{ inventory_hostname }}
           Managed System: {{ managed_system }}
-          VIOS: {{ vios_name | default('undefined') }}
+          VIOS: {{ vios_name }}
 
           LPAR Name: {{ lpar_name }}
 
@@ -165,6 +177,39 @@
         msg: "LPAR '{{ lpar_name }}' created successfully"
       when: lpar_create_result is succeeded
 
+- name: Create Logical Volume on VIOS
+  hosts: hmc
+  connection: ssh
+  gather_facts: false
+
+  tasks:
+    - name: Create Logical Volume on VIOS
+      ansible.builtin.include_role:
+        name: create_lpar_lv
+      vars:
+        create_lpar_lv_lpar_name: "{{ lpar_name }}"
+        create_lpar_lv_managed_system: "{{ managed_system }}"
+        create_lpar_lv_volume_name: "{{ (lpar_name ~ 'boot') | truncate(13, True, '') }}"
+        create_lpar_lv_volume_group: "{{ vios_volume_group }}"
+        create_lpar_lv_vios_name: "{{ vios_name }}"
+        create_lpar_lv_hmc_password: "{{ hmc_password }}"
+        create_lpar_lv_disk_size_gb: "{{ lpar_disk }}"
+
+- name: Get LPAR facts from HMC
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  # Disable SSL certificate verification for self-signed certificates
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    hmc_username: hscroot
+    hmc_password: ""
+
+  tasks:
     - name: Facts of the partition
       ibm.power_hmc.powervm_lpar_instance:
         hmc_host: "{{ inventory_hostname }}"
@@ -182,27 +227,6 @@
     - name: Display manual VIOS configuration steps
       ansible.builtin.debug:
         msg: |
-          ============================================
-          MANUAL VIOS CONFIGURATION STEPS
-          ============================================
-
-          If virtual SCSI was not configured automatically, follow these steps on VIOS:
-
-          1. Find the virtual host adapter for the new LPAR:
-             $ lsmap -all | grep {{ lpar_name }}
-
-          2. Create virtual disk for the LPAR:
-             $ mklv -lv {{ lpar_name }}_rootvg rootvg {{ lpar_disk }}G
-             $ mkvdev -vdev {{ lpar_name }}_rootvg -vadapter vhostX
-
-          3. Create and load virtual optical device with RHEL ISO:
-             $ mkvdev -fbo -vadapter vhostX
-             $ lsdev -type optical  (note the vtoptX device)
-             $ loadopt -vtd vtoptX -disk /path/to/rhel.iso
-
-          4. Verify mappings:
-             $ lsmap -vadapter vhostX
-
           ============================================
           BOOT THE LPAR
           ============================================

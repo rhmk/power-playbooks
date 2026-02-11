@@ -1,0 +1,7 @@
+---
+# vars/main.yml - create_lpar_lv role
+# Nur HMC-Verbindung; VIOS-Befehle per viosvrcmd von der HMC.
+
+create_lpar_lv_hmc_auth:
+  username: "{{ create_lpar_lv_hmc_username }}"
+  password: "{{ create_lpar_lv_hmc_password }}"
