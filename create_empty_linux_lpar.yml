@@ -22,8 +22,7 @@
 #     -e "hmc_password=PASSWORD"
 
 - name: Create Linux LPAR for RHEL DVD or Network installation
-  hosts: localhost
-  connection: local
+  hosts: hmc
   gather_facts: false
 
   # Disable SSL certificate verification for self-signed certificates
@@ -139,6 +138,7 @@
           Disk: {{ lpar_disk }} GB
 
           Network: {{ virtual_network }} (VLAN: {{ vlan_id }})
+
           ============================================
 
     # =========================================================================
@@ -171,18 +171,13 @@
         #  - volume_size: "{{ lpar_disk }}"
         state: present
       register: lpar_create_result
+      delegate_to: localhost
 
     - name: Display LPAR creation result
       ansible.builtin.debug:
         msg: "LPAR '{{ lpar_name }}' created successfully"
       when: lpar_create_result is succeeded
 
-- name: Create Logical Volume on VIOS
-  hosts: hmc
-  connection: ssh
-  gather_facts: false
-
-  tasks:
     - name: Create Logical Volume on VIOS
       ansible.builtin.include_role:
         name: create_lpar_lv
@@ -192,24 +187,10 @@
         create_lpar_lv_volume_name: "{{ (lpar_name ~ 'boot') | truncate(13, True, '') }}"
         create_lpar_lv_volume_group: "{{ vios_volume_group }}"
         create_lpar_lv_vios_name: "{{ vios_name }}"
+        create_lpar_lv_hmc_username: "{{ hmc_username }}"
         create_lpar_lv_hmc_password: "{{ hmc_password }}"
         create_lpar_lv_disk_size_gb: "{{ lpar_disk }}"
 
-- name: Get LPAR facts from HMC
-  hosts: localhost
-  connection: local
-  gather_facts: false
-
-  # Disable SSL certificate verification for self-signed certificates
-  environment:
-    REQUESTS_CA_BUNDLE: ""
-    CURL_CA_BUNDLE: ""
-
-  vars:
-    hmc_username: hscroot
-    hmc_password: ""
-
-  tasks:
     - name: Facts of the partition
       ibm.power_hmc.powervm_lpar_instance:
         hmc_host: "{{ inventory_hostname }}"
@@ -220,7 +201,12 @@
         vm_name: "{{ lpar_name }}"
         advanced_info: true
         state: facts
-      register: redhat_linux_install_facts_output
+      register: lpar_facts_output
+      delegate_to: localhost
+
+    - name: Display LPAR facts
+      ansible.builtin.debug:
+        msg: "LPAR facts: {{ lpar_facts_output }}"
 
     # DISPLAY MANUAL VIOS STEPS (if needed)
     # =========================================================================

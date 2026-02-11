@@ -29,7 +29,9 @@
 - name: Get LPAR facts from HMC
   ibm.power_hmc.powervm_lpar_instance:
     hmc_host: "{{ create_lpar_lv_hmc_host }}"
-    hmc_auth: "{{ create_lpar_lv_hmc_auth }}"
+    hmc_auth:
+      username: "{{ create_lpar_lv_hmc_username }}"
+      password: "{{ create_lpar_lv_hmc_password }}"
     system_name: "{{ create_lpar_lv_managed_system }}"
     vm_name: "{{ create_lpar_lv_lpar_name }}"
     advanced_info: true
@@ -52,21 +54,11 @@
 # =============================================================================
 
 - name: Get next available slot in LPAR
-  ansible.builtin.command:
-    argv:
-      - lshwres
-      - -r
-      - virtualio
-      - --rsubtype
-      - slot
-      - --level
-      - lpar
-      - -m
-      - "{{ create_lpar_lv_managed_system }}"
-      - --filter
-      - "lpar_names={{ create_lpar_lv_lpar_name }}"
-      - -F
-      - next_avail_virtual_slot
+  ansible.builtin.raw: >-
+    lshwres -r virtualio --rsubtype slot --level lpar
+    -m {{ create_lpar_lv_managed_system }}
+    --filter lpar_names={{ create_lpar_lv_lpar_name }}
+    -F next_avail_virtual_slot
   register: create_lpar_lv_lpar_free_slot_result
   changed_when: false
 
@@ -75,21 +67,11 @@
     create_lpar_lv_lpar_scsi_slot: "{{ create_lpar_lv_lpar_free_slot_result.stdout | trim }}"
 
 - name: Get used slots in VIOS
-  ansible.builtin.command:
-    argv:
-      - lshwres
-      - -r
-      - virtualio
-      - --rsubtype
-      - slot
-      - --level
-      - lpar
-      - -m
-      - "{{ create_lpar_lv_managed_system }}"
-      - --filter
-      - "lpar_names={{ create_lpar_lv_vios_name }}"
-      - -F
-      - next_avail_virtual_slot
+  ansible.builtin.raw: >-
+    lshwres -r virtualio --rsubtype slot --level lpar
+    -m {{ create_lpar_lv_managed_system }}
+    --filter lpar_names={{ create_lpar_lv_vios_name }}
+    -F next_avail_virtual_slot
   register: create_lpar_lv_vios_free_slot_result
   changed_when: false
 
@@ -102,7 +84,7 @@
 # =============================================================================
 
 - name: Get VIOS partition ID from HMC
-  ansible.builtin.command: >-
+  ansible.builtin.raw: >-
     lssyscfg -r lpar -m {{ create_lpar_lv_managed_system }}
     -F lpar_id --filter lpar_names={{ create_lpar_lv_vios_name }}
   register: create_lpar_lv_vios_id_result
@@ -113,7 +95,7 @@
     create_lpar_lv_vios_id: "{{ create_lpar_lv_vios_id_result.stdout | trim }}"
 
 - name: Get LPAR profile name from HMC
-  ansible.builtin.command: >-
+  ansible.builtin.raw: >-
     lssyscfg -r prof -m {{ create_lpar_lv_managed_system }}
     --filter lpar_names={{ create_lpar_lv_lpar_name }} -F name
   register: create_lpar_lv_profile_result
@@ -145,7 +127,7 @@
     # =========================================================================
 
     - name: Add virtual SCSI server adapter to VIOS via HMC
-      ansible.builtin.command: >-
+      ansible.builtin.raw: >-
         chhwres -r virtualio --rsubtype scsi -m {{ create_lpar_lv_managed_system }}
         -o a -p {{ create_lpar_lv_vios_name }}
         -s {{ create_lpar_lv_vios_scsi_slot }}
@@ -177,16 +159,9 @@
           ) }}"
 
     - name: Add virtual SCSI client adapter to LPAR profile via HMC
-      ansible.builtin.command:
-        argv:
-          - chsyscfg
-          - -r
-          - prof
-          - -m
-          - "{{ create_lpar_lv_managed_system }}"
-          - --force
-          - -i
-          - "{{ _create_lpar_lv_chsyscfg_i }}"
+      ansible.builtin.raw: >-
+        chsyscfg -r prof -m {{ create_lpar_lv_managed_system }}
+        --force -i "{{ _create_lpar_lv_chsyscfg_i }}"
       register: create_lpar_lv_add_scsi_client_result
       failed_when: >-
         create_lpar_lv_add_scsi_client_result.rc != 0 and
@@ -206,8 +181,9 @@
     # =========================================================================
 
     - name: Configure new virtual adapter on VIOS (viosvrcmd – creates vhost)
-      ansible.builtin.command: >-
-        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c 'ioscli cfgdev -dev vio0'
+      ansible.builtin.raw: >-
+        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
+        -c 'cfgdev -dev vio0'
       register: create_lpar_lv_cfgdev_result
       changed_when: create_lpar_lv_cfgdev_result.rc == 0
       failed_when: false
@@ -215,7 +191,9 @@
     - name: Refresh LPAR facts after adding vSCSI adapter
       ibm.power_hmc.powervm_lpar_instance:
         hmc_host: "{{ create_lpar_lv_hmc_host }}"
-        hmc_auth: "{{ create_lpar_lv_hmc_auth }}"
+        hmc_auth:
+          username: "{{ create_lpar_lv_hmc_username }}"
+          password: "{{ create_lpar_lv_hmc_password }}"
         system_name: "{{ create_lpar_lv_managed_system }}"
         vm_name: "{{ create_lpar_lv_lpar_name }}"
         advanced_info: true
@@ -233,19 +211,13 @@
     # =========================================================================
 
     - name: Create logical volume on VIOS via viosvrcmd
-      ansible.builtin.command:
-        argv:
-          - viosvrcmd
-          - -m
-          - "{{ create_lpar_lv_managed_system }}"
-          - -p
-          - "{{ create_lpar_lv_vios_name }}"
-          - -c
-          - "ioscli mklv -lv {{ create_lpar_lv_volume_name }} {{ create_lpar_lv_volume_group }} {{ create_lpar_lv_disk_size_gb }}G"
+      ansible.builtin.raw: >-
+        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
+        -c 'mklv -lv {{ create_lpar_lv_volume_name }} {{ create_lpar_lv_volume_group }} {{ create_lpar_lv_disk_size_gb }}G'
       register: create_lpar_lv_mklv_result
       failed_when: >-
         create_lpar_lv_mklv_result.rc != 0 and
-        'already exists' not in create_lpar_lv_mklv_result.stdout
+        'already used' not in create_lpar_lv_mklv_result.stdout
       changed_when: create_lpar_lv_mklv_result.rc == 0
 
     - name: Track – logical volume created
@@ -257,8 +229,9 @@
     # =========================================================================
 
     - name: Get all vhost mappings from VIOS via viosvrcmd
-      ansible.builtin.command: >-
-        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }} -c "ioscli lsmap -all -fmt ':'"
+      ansible.builtin.raw: >-
+        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
+        -c "lsmap -all -fmt ':'"
       register: create_lpar_lv_lsmap_all_result
       changed_when: false
 
@@ -295,15 +268,9 @@
     # =========================================================================
 
     - name: Map logical volume to LPAR via virtual SCSI (viosvrcmd)
-      ansible.builtin.command:
-        argv:
-          - viosvrcmd
-          - -m
-          - "{{ create_lpar_lv_managed_system }}"
-          - -p
-          - "{{ create_lpar_lv_vios_name }}"
-          - -c
-          - "ioscli mkvdev -vdev {{ create_lpar_lv_volume_name }} -vadapter {{ create_lpar_lv_vhost }} -dev {{ create_lpar_lv_vtd_name }}"
+      ansible.builtin.raw: >-
+        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
+        -c "mkvdev -vdev {{ create_lpar_lv_volume_name }} -vadapter {{ create_lpar_lv_vhost }} -dev {{ create_lpar_lv_vtd_name }}"
       register: create_lpar_lv_mkvdev_result
       failed_when: >-
         create_lpar_lv_mkvdev_result.rc != 0 and
@@ -319,15 +286,9 @@
     # =========================================================================
 
     - name: Verify virtual SCSI mapping via viosvrcmd
-      ansible.builtin.command:
-        argv:
-          - viosvrcmd
-          - -m
-          - "{{ create_lpar_lv_managed_system }}"
-          - -p
-          - "{{ create_lpar_lv_vios_name }}"
-          - -c
-          - "ioscli lsmap -vadapter {{ create_lpar_lv_vhost }} -fmt ':'"
+      ansible.builtin.raw: >-
+        viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
+        -c "lsmap -vadapter {{ create_lpar_lv_vhost }} -fmt ':'"
       register: create_lpar_lv_lsmap_result
       changed_when: false
 
@@ -355,17 +316,17 @@
           {{ ansible_failed_result.msg | default(ansible_failed_result.stderr | default('unbekannter Fehler')) }}
 
     - name: "ROLLBACK: Remove VTD mapping (rmvdev)"
-      ansible.builtin.command: >-
+      ansible.builtin.raw: >-
         viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
-        -c 'ioscli rmvdev -vtd {{ create_lpar_lv_vtd_name }}'
+        -c 'rmvdev -vtd {{ create_lpar_lv_vtd_name }}'
       when: _create_lpar_lv_vtd_created | default(false)
       failed_when: false
       changed_when: true
 
     - name: "ROLLBACK: Remove logical volume (rmlv)"
-      ansible.builtin.command: >-
+      ansible.builtin.raw: >-
         viosvrcmd -m {{ create_lpar_lv_managed_system }} -p {{ create_lpar_lv_vios_name }}
-        -c 'ioscli rmlv -f {{ create_lpar_lv_volume_name }}'
+        -c 'rmlv -f {{ create_lpar_lv_volume_name }}'
       when: _create_lpar_lv_lv_created | default(false)
       failed_when: false
       changed_when: true
@@ -384,14 +345,14 @@
       when: _create_lpar_lv_scsi_client_created | default(false)
 
     - name: "ROLLBACK: Remove vSCSI client adapter from LPAR profile (chsyscfg)"
-      ansible.builtin.command: >-
+      ansible.builtin.raw: >-
         chsyscfg -r prof -m {{ create_lpar_lv_managed_system }} --force -i '{{ _create_lpar_lv_chsyscfg_rm }}'
       when: _create_lpar_lv_scsi_client_created | default(false)
       failed_when: false
       changed_when: true
 
     - name: "ROLLBACK: Remove vSCSI server adapter from VIOS (chhwres)"
-      ansible.builtin.command: >-
+      ansible.builtin.raw: >-
         chhwres -r virtualio --rsubtype scsi -m {{ create_lpar_lv_managed_system }}
         -o r -p {{ create_lpar_lv_vios_name }}
         -s {{ create_lpar_lv_vios_scsi_slot }}

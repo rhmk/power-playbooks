@@ -24,7 +24,7 @@
 # =============================================================================
 # HMC-Host (wird oft aus Inventory gesetzt: inventory_hostname bei hosts: hmc)
 create_lpar_lv_hmc_host: "{{ inventory_hostname }}"
-create_lpar_lv_hmc_username: "{{ hmc_user | default('hscroot') }}"
+create_lpar_lv_hmc_username: "{{ hmc_username | default('hscroot') }}"
 # create_lpar_lv_hmc_password: ""   # Pflicht, via -e oder Vault
 
 # =============================================================================
