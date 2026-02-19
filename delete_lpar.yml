@@ -56,8 +56,11 @@
         system_name: "{{ _managed_system }}"
         action: shutdown
       register: shutdown_result
-      ignore_errors: true
-      failed_when: false
+      failed_when: >
+        shutdown_result is failed
+        and ('already' not in (shutdown_result.msg | default('') | lower))
+        and ('not found' not in (shutdown_result.msg | default('') | lower))
+        and ('no such' not in (shutdown_result.msg | default('') | lower))
 
     - name: Wait for LPAR to stop
       ansible.builtin.pause:

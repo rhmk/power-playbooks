@@ -1,8 +1,8 @@
 ---
 # Ansible Playbook: Setup Kickstart Server for Power LPARs
 #
-# Uses role setup_rhel_pxe_structure for ISO/repo/TFTP layout, then configures
-# dnsmasq, httpd, firewall and services.
+# Creates ISO/repo/TFTP layout (mount ISO, sync to repo, GRUB2, kernel/initrd),
+# then installs/configures standard TFTP server (tftp-server), httpd, firewall and services.
 #
 # Usage:
 #   ansible-playbook setup_kickstart_server.yml -i inventory/hosts.yml \
@@ -17,39 +17,31 @@
   gather_facts: true
 
   vars:
-    rhel_version: "9.6"
+    rhel_version: "9.4"
     rhel_major_version: "{{ rhel_version.split('.')[0] }}"
-    iso_path: "/root/rhel-{{ rhel_version }}-ppc64le-dvd.iso"
+    iso_path: "/var/www/html/iso/rhel-{{ rhel_version }}-ppc64le-dvd.iso"
     kickstart_base_dir: "/var/www/html/kickstart"
     tftp_root: "/var/lib/tftpboot"
-    iso_mount_point: "/mnt/rhel-iso"
+    iso_mount_point: "/mnt/rhel{{ rhel_major_version }}-iso"
     repo_dir: "{{ kickstart_base_dir }}/rhel{{ rhel_major_version }}"
-    dhcp_domain_name: "{{ domain_name | default('localdomain') }}"
     kickstart_server_ip: "{{ ansible_default_ipv4.address }}"
-    upstream_dns_servers:
-      - "{{ dns_server1 | default('8.8.8.8') }}"
-      - "{{ dns_server2 | default('8.8.4.4') }}"
-    dns_cache_size: 1000
     ks_root_password: "{{ root_password | default('changeme') }}"
     ks_timezone: "{{ timezone | default('Europe/Berlin') }}"
     ks_keyboard: "{{ keyboard_layout | default('us') }}"
     ks_language: "{{ language | default('en_US.UTF-8') }}"
     firewall_services:
-      - dns
       - tftp
       - http
       - https
     firewall_ports:
-      - 53/tcp
-      - 53/udp
       - 69/udp
       - 80/tcp
       - 443/tcp
-      - 67/udp
-      - 68/udp
       - 4011/udp
+    require_iso: true
+    grub_generic: false
 
-  pre_tasks:
+  tasks:
     - name: Validate system architecture is ppc64le
       ansible.builtin.assert:
         that:
@@ -68,56 +60,115 @@
           Upload the RHEL ISO and re-run, or run with -e require_iso=false.
       when: not iso_stat.stat.exists
 
-  roles:
-    - role: setup_rhel_pxe_structure
-      setup_rhel_pxe_structure_iso_path: "{{ iso_path }}"
-      setup_rhel_pxe_structure_rhel_version: "{{ rhel_version }}"
-      setup_rhel_pxe_structure_kickstart_base_dir: "{{ kickstart_base_dir }}"
-      setup_rhel_pxe_structure_tftp_root: "{{ tftp_root }}"
-      setup_rhel_pxe_structure_iso_mount_point: "{{ iso_mount_point }}"
-      setup_rhel_pxe_structure_require_iso: false
+    - name: Fail if ISO not found and require_iso is true
+      ansible.builtin.fail:
+        msg: "ISO not found at {{ iso_path }}. Set iso_path or require_iso: false."
+      when: require_iso and not iso_stat.stat.exists
 
-  tasks:
-    - name: Stop and disable conflicting services
-      ansible.builtin.service:
-        name: "{{ item }}"
-        state: stopped
-        enabled: false
+    - name: Install packages for PXE structure and TFTP server
+      ansible.builtin.dnf:
+        name:
+          - httpd
+          - tftp-server
+          - grub2-tools
+          - grub2-tools-extra
+          - rsync
+        state: present
+
+    - name: Create directory structure for kickstart and TFTP
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+        owner: root
+        group: root
       loop:
-        - systemd-resolved
-      ignore_errors: true
+        - "{{ kickstart_base_dir }}"
+        - "{{ kickstart_base_dir }}/ks"
+        - "{{ repo_dir }}"
+        - "{{ tftp_root }}"
+        - "{{ tftp_root }}/grub2-ppc64le"
+        - "{{ tftp_root }}/boot"
 
-    - name: Backup original dnsmasq configuration
-      ansible.builtin.copy:
-        src: /etc/dnsmasq.conf
-        dest: /etc/dnsmasq.conf.original
-        remote_src: true
-        force: false
-      ignore_errors: true
+    - name: Check if ISO mount point exists (or is already mounted)
+      ansible.builtin.stat:
+        path: "{{ iso_mount_point }}"
+      register: iso_mount_point_stat
 
-    - name: Configure dnsmasq for DNS caching and PXE proxy
-      ansible.builtin.template:
-        src: templates/dnsmasq.conf.j2
-        dest: /etc/dnsmasq.conf
-        mode: "0644"
-        backup: true
-        validate: "dnsmasq --test -C %s"
-      notify: Restart dnsmasq
-
-    - name: Create dnsmasq TFTP directory
+    - name: Create ISO mount point directory
       ansible.builtin.file:
-        path: "{{ tftp_root }}"
+        path: "{{ iso_mount_point }}"
         state: directory
         mode: "0755"
-        owner: dnsmasq
-        group: dnsmasq
+        owner: root
+        group: root
+      when: not iso_mount_point_stat.stat.exists
 
-    - name: Ensure dnsmasq can read TFTP files
+    - name: Mount RHEL ISO
+      ansible.posix.mount:
+        path: "{{ iso_mount_point }}"
+        src: "{{ iso_path }}"
+        fstype: iso9660
+        opts: loop,ro
+        state: mounted
+      when: iso_stat.stat.exists
+
+    - name: Sync ISO content to repo directory (local rsync on host)
+      ansible.builtin.shell: "rsync -a {{ iso_mount_point }}/ {{ repo_dir }}/"
+      when: iso_stat.stat.exists
+
+    - name: Set permissions on repo directory
       ansible.builtin.file:
-        path: "{{ tftp_root }}"
+        path: "{{ repo_dir }}"
         state: directory
+        mode: "0755"
         recurse: true
-        mode: "0755"
+      when: iso_stat.stat.exists
+
+    - name: Copy GRUB2 bootloader from /usr/share for ppc64le to TFTP root
+      ansible.builtin.copy:
+        src: "/usr/share/grub/powerpc-ieee1275/"
+        dest: "{{ tftp_root }}/grub2-ppc64le/"
+        remote_src: true
+        mode: "0644"
+      failed_when: false
+
+    - name: Create GRUB2 network boot layout (grub2-mknetdir)
+      ansible.builtin.shell: >
+        grub2-mknetdir --net-directory={{ tftp_root }} --subdir=/grub2-ppc64le
+      args:
+        creates: "{{ tftp_root }}/grub2-ppc64le/powerpc-ieee1275/core.elf"
+      failed_when: false
+      changed_when: false
+
+    - name: Copy kernel and initrd for network boot
+      ansible.builtin.copy:
+        src: "{{ item.src }}"
+        dest: "{{ item.dest }}"
+        remote_src: true
+        mode: "0644"
+      loop:
+        - src: "{{ repo_dir }}/ppc/ppc64/vmlinuz"
+          dest: "{{ tftp_root }}/boot/vmlinuz-rhel{{ rhel_major_version }}"
+        - src: "{{ repo_dir }}/ppc/ppc64/initrd.img"
+          dest: "{{ tftp_root }}/boot/initrd-rhel{{ rhel_major_version }}.img"
+      when: iso_stat.stat.exists
+
+    - name: Create generic GRUB config for Power network boot
+      ansible.builtin.template:
+        src: templates/grub_generic.cfg.j2
+        dest: "{{ tftp_root }}/grub2-ppc64le/grub.cfg"
+        mode: "0644"
+      when: grub_generic | bool
+
+    - name: Display PXE structure summary
+      ansible.builtin.debug:
+        msg: |
+          PXE structure ready:
+            Repo: {{ repo_dir }}
+            TFTP root: {{ tftp_root }}
+            GRUB2: {{ tftp_root }}/grub2-ppc64le
+            Boot: {{ tftp_root }}/boot (vmlinuz, initrd)
 
     - name: Configure Apache for kickstart
       ansible.builtin.template:
@@ -126,17 +177,18 @@
         mode: "0644"
       notify: Restart httpd
 
-    - name: Create default kickstart file for Power LPARs
-      ansible.builtin.template:
-        src: templates/ks-power.cfg.j2
-        dest: "{{ kickstart_base_dir }}/ks/ks-rhel{{ rhel_major_version }}-power.cfg"
-        mode: "0644"
+    # - name: Create default kickstart file for Power LPARs
+    #  ansible.builtin.template:
+    #    src: templates/ks-power.cfg.j2
+    #    dest: "{{ kickstart_base_dir }}/ks/ks-rhel{{ rhel_major_version }}-power.cfg"
+    #    mode: "0644"
 
-    - name: Create GRUB2 configuration for Power network boot
-      ansible.builtin.template:
-        src: templates/grub.cfg.j2
-        dest: "{{ tftp_root }}/grub2-ppc64le/grub.cfg"
-        mode: "0644"
+    # - name: Create GRUB2 configuration for Power network boot
+    #  ansible.builtin.template:
+    #    src: templates/grub.cfg.j2
+    #    dest: "{{ tftp_root }}/grub2-ppc64le/grub.cfg"
+    #    mode: "0644"
+    #  when: not (grub_generic | bool)
 
     - name: Ensure firewalld is running
       ansible.builtin.service:
@@ -151,7 +203,11 @@
         state: enabled
         immediate: true
       loop: "{{ firewall_services }}"
-      ignore_errors: true
+      register: fw_services_result
+      failed_when: >
+        fw_services_result is failed
+        and ('no such service' not in (fw_services_result.msg | default('') | lower))
+        and ('not found' not in (fw_services_result.msg | default('') | lower))
 
     - name: Configure firewall ports
       ansible.posix.firewalld:
@@ -167,7 +223,12 @@
         setype: tftpdir_t
         state: present
       notify: Restore SELinux contexts
-      ignore_errors: true
+      register: sefcontext_tftp_result
+      failed_when: >
+        sefcontext_tftp_result is failed
+        and ('disabled' not in (sefcontext_tftp_result.msg | default('') | lower))
+        and ('semanage' not in (sefcontext_tftp_result.msg | default('') | lower))
+        and ('not found' not in (sefcontext_tftp_result.msg | default('') | lower))
 
     - name: Set SELinux context for HTTP directory
       community.general.sefcontext:
@@ -175,23 +236,36 @@
         setype: httpd_sys_content_t
         state: present
       notify: Restore SELinux contexts
-      ignore_errors: true
+      register: sefcontext_http_result
+      failed_when: >
+        sefcontext_http_result is failed
+        and ('disabled' not in (sefcontext_http_result.msg | default('') | lower))
+        and ('semanage' not in (sefcontext_http_result.msg | default('') | lower))
+        and ('not found' not in (sefcontext_http_result.msg | default('') | lower))
 
     - name: Enable SELinux boolean for TFTP home directories
       ansible.posix.seboolean:
         name: tftp_home_dir
         state: true
         persistent: true
-      ignore_errors: true
+      register: seboolean_tftp_result
+      failed_when: >
+        seboolean_tftp_result is failed
+        and ('disabled' not in (seboolean_tftp_result.msg | default('') | lower))
+        and ('could not find' not in (seboolean_tftp_result.msg | default('') | lower))
+        and ('not found' not in (seboolean_tftp_result.msg | default('') | lower))
 
-    - name: Enable and start services
+    - name: Enable and start TFTP socket (standard tftp-server, port 69)
       ansible.builtin.service:
-        name: "{{ item }}"
+        name: tftp.socket
         state: started
         enabled: true
-      loop:
-        - dnsmasq
-        - httpd
+
+    - name: Enable and start httpd
+      ansible.builtin.service:
+        name: httpd
+        state: started
+        enabled: true
 
     - name: Display kickstart server configuration summary
       ansible.builtin.debug:
@@ -200,18 +274,13 @@
           KICKSTART SERVER CONFIGURATION COMPLETE
           ============================================================
           Server IP: {{ kickstart_server_ip }}
-          TFTP Root: {{ tftp_root }}
+          TFTP: tftp.socket (standard tftp-server), root {{ tftp_root }}
           Kickstart: {{ kickstart_base_dir }}/ks/
           RHEL Repo: {{ repo_dir }}
           Boot file: grub2-ppc64le/core.elf
           ============================================================
 
   handlers:
-    - name: Restart dnsmasq
-      ansible.builtin.service:
-        name: dnsmasq
-        state: restarted
-
     - name: Restart httpd
       ansible.builtin.service:
         name: httpd

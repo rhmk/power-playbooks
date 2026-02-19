@@ -1,0 +1,24 @@
+# {{ ansible_managed }}
+# Generic GRUB2 for Power (ppc64le) – repo/tftp structure only
+
+set default=0
+set timeout=60
+insmod net
+insmod efinet
+insmod http
+insmod linux
+
+menuentry 'Install RHEL {{ rhel_version }} for Power (Kickstart)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel{{ rhel_major_version }} \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
+        inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel{{ rhel_major_version }}-power.cfg \
+        inst.text inst.sshd ip=dhcp rd.neednet=1 console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel{{ rhel_major_version }}.img
+}
+
+menuentry 'Boot from local disk' {
+    echo "Booting from local disk..."
+    exit
+}

@@ -196,7 +196,7 @@
             state: restarted
         delegate_to: "{{ groups['kickstart_servers'][0] }}"
 
-- name: Lparnetboot operation on target lpar # noqa: ignore-errors
+- name: Lparnetboot operation on target lpar
   run_once: true
   connection: local
   collections:
@@ -214,7 +214,12 @@
           vm_mac: "{{ redhat_linux_install_mac_address }}"
           timeout: "{{ redhat_linux_install_netboot_timeout }}"
       action: install_os
-  ignore_errors: true
+  register: install_os_result
+  failed_when: >
+    install_os_result is failed
+    and ('timeout' not in (install_os_result.msg | default('') | lower))
+    and ('connection' not in (install_os_result.msg | default('') | lower))
+    and ('not reachable' not in (install_os_result.msg | default('') | lower))
   delegate_to: "{{ groups['hmc'][0] }}"
 
 - name: Revert DHCP configuration (full mode with dhcpd)

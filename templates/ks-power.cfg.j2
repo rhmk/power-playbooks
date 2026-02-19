@@ -46,7 +46,7 @@ timezone {{ ks_timezone }} --utc
 network --bootproto=dhcp --device=link --activate --onboot=yes
 
 # Set hostname (can be overridden by DHCP)
-network --hostname=power-lpar.{{ dhcp_domain_name }}
+network --hostname={{ hostname | default(lpar_name, true) }}.{{ dhcp_domain_name }}
 
 # =============================================================================
 # Security
@@ -54,7 +54,7 @@ network --hostname=power-lpar.{{ dhcp_domain_name }}
 
 # Root password (use vault-encrypted variable in production!)
 # Generate hash with: python3 -c 'import crypt; print(crypt.crypt("password", crypt.mksalt(crypt.METHOD_SHA512)))'
-rootpw --iscrypted {{ ks_root_password | password_hash('sha512') }}
+rootpw --iscrypted {{ ks_root_password | default('changeme') | password_hash('sha512') }}
 
 # Disable firewall during install (enable post-install)
 firewall --disabled
@@ -187,6 +187,7 @@ fi
 
 echo "=== Kickstart Post-Installation Script ==="
 echo "Date: $(date)"
+echo "Servertyp: {{ server_type | default('not defined') }}"
 
 # =============================================================================
 # Power-specific configuration

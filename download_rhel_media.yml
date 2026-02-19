@@ -1,0 +1,130 @@
+---
+# yamllint disable rule:quoted-strings
+# Ansible Playbook: Download RHEL DVD ISO (rhel-{version}-{arch}-dvd.iso) from Red Hat Customer Portal.
+#
+# Uses the Red Hat API with an offline token (images API, see github.com/dvaerum/redhat_iso):
+#   - List: GET /management/v1/images/rhel/{version}/{arch}
+#   - Download: GET /management/v1/images/{checksum}/download
+#
+# Usage:
+#   ansible-playbook download_rhel_media.yml -i inventory/hosts.yml \
+#     -e "offline_token=YOUR_OFFLINE_TOKEN" \
+#     -e "rhel_version=10.1" \
+#     -e "target_dir=/var/www/html/iso"
+#
+# Parameters:
+#   rhel_version  - RHEL version (default: 10.1)
+#   arch          - Architecture (default: ppc64le)
+#   target_dir    - Directory to save the ISO (default: /var/www/html/iso)
+#   offline_token - Red Hat offline token from https://access.redhat.com/management/api (required)
+
+- name: Download RHEL DVD ISO via Red Hat API
+  hosts: kickstart_servers
+  gather_facts: true
+
+  vars:
+    rhel_version: "10.1"
+    arch: "ppc64le"
+    target_dir: "/var/www/html/iso"
+    offline_token: ""
+
+    rhel_dvd_filename: "rhel-{{ rhel_version }}-{{ arch }}-dvd.iso"
+    rh_sso_token_url: "https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
+    rh_api_base: "https://api.access.redhat.com/management/v1"
+    debug_nolog: false
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - offline_token | length > 0
+        fail_msg: "offline_token is required. Get one from https://access.redhat.com/management/api"
+
+    - name: Ensure target directory exists
+      ansible.builtin.file:
+        path: "{{ target_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Get Red Hat access token from offline token
+      ansible.builtin.uri:
+        url: "{{ rh_sso_token_url }}"
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: refresh_token
+          client_id: rhsm-api
+          refresh_token: "{{ offline_token }}"
+        return_content: true
+        status_code: [200]
+      register: token_response
+      no_log: "{{ debug_nolog }}"
+
+    - name: Set access token fact
+      ansible.builtin.set_fact:
+        rh_access_token: "{{ (token_response.json if token_response.json is mapping else (token_response.json | from_json)).access_token }}"
+      no_log: "{{ debug_nolog }}"
+
+    - name: List RHEL images for version and arch
+      ansible.builtin.uri:
+        url: "{{ rh_api_base }}/images/rhel/{{ rhel_version }}/{{ arch }}"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ rh_access_token }}"
+          Accept: "application/json"
+        return_content: true
+        status_code: [200]
+      register: images_list_response
+      no_log: "{{ debug_nolog }}"
+
+    - name: Find rhel-{{ rhel_version }}-{{ arch }}-dvd.iso in image list
+      ansible.builtin.set_fact:
+        _iso_image: "{{ (images_list_response.json.body | default([])) | selectattr('filename', 'equalto', rhel_dvd_filename) | list | first }}"
+
+    - name: Fail if DVD ISO not found
+      ansible.builtin.fail:
+        msg: "{{ rhel_dvd_filename }} not found for version {{ rhel_version }} and arch {{ arch }}."
+      when: _iso_image is not defined or _iso_image == {} or _iso_image.checksum is not defined
+
+    # API returns 307 with Location/JSON body; do NOT follow redirect or we would download the full ISO into memory (github.com/dvaerum/redhat_iso)
+    - name: Get download URL for ISO (by checksum)
+      ansible.builtin.uri:
+        url: "{{ rh_api_base }}/images/{{ _iso_image.checksum }}/download"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ rh_access_token }}"
+          Accept: "application/json"
+        return_content: true
+        status_code: [200, 307]
+        follow_redirects: false
+        timeout: 60
+      register: download_info_response
+      no_log: "{{ debug_nolog }}"
+
+    - name: Set download URL from response (200 or 307)
+      ansible.builtin.set_fact:
+        _download_href: "{{ (_href if (_href is defined and _href) else '') or (download_info_response.headers.Location | default('')) }}"
+      vars:
+        _href: "{{ download_info_response.json.body.href if (download_info_response.json is defined and download_info_response.json is mapping and download_info_response.json.body is defined) else '' }}"
+      when: download_info_response is defined
+
+    - name: Fail if download URL could not be resolved
+      ansible.builtin.fail:
+        msg: "Could not get download URL for {{ rhel_dvd_filename }}."
+      when: _download_href is not defined or _download_href == ''
+
+    - name: Download RHEL DVD ISO
+      ansible.builtin.get_url:
+        url: "{{ _download_href }}"
+        dest: "{{ target_dir }}/{{ rhel_dvd_filename }}"
+        headers:
+          Authorization: "Bearer {{ rh_access_token }}"
+        mode: "0644"
+        force: false
+      register: iso_download
+      no_log: "{{ debug_nolog }}"
+
+    - name: Report download path
+      ansible.builtin.debug:
+        msg: "RHEL ISO saved to {{ target_dir }}/{{ rhel_dvd_filename }}"
+      when: iso_download is changed or iso_download.dest is defined

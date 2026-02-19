@@ -8,7 +8,11 @@
     remote_src: true
     force: false
   delegate_to: "{{ pxe_register_kickstart_host }}"
-  ignore_errors: true
+  register: dhcpd_backup_result
+  failed_when: >
+    dhcpd_backup_result is failed
+    and ('no such file' not in (dhcpd_backup_result.msg | default('') | lower))
+    and ('not found' not in (dhcpd_backup_result.msg | default('') | lower))
 
 - name: Add LPAR block to dhcpd.conf
   ansible.builtin.blockinfile:

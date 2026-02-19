@@ -24,4 +24,9 @@
     name: kea-dhcp4-server
     state: restarted
   delegate_to: "{{ pxe_register_kickstart_host }}"
-  ignore_errors: true
+  register: kea_restart_result
+  failed_when: >
+    kea_restart_result is failed
+    and ('not found' not in (kea_restart_result.msg | default('') | lower))
+    and ('could not find' not in (kea_restart_result.msg | default('') | lower))
+    and ('no such unit' not in (kea_restart_result.msg | default('') | lower))

@@ -39,7 +39,11 @@
             remote_src: true
             mode: '0644'
         delegate_to: "{{ groups['kickstart_servers'][0] }}"
-        ignore_errors: true
+        register: dnsmasq_backup_result
+        failed_when: >
+          dnsmasq_backup_result is failed
+          and ('no such file' not in (dnsmasq_backup_result.msg | default('') | lower))
+          and ('not found' not in (dnsmasq_backup_result.msg | default('') | lower))
 
       - name: Configure dnsmasq as DHCP proxy and TFTP server
         ansible.builtin.template:
