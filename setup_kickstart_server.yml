@@ -39,7 +39,7 @@
       - 443/tcp
       - 4011/udp
     require_iso: true
-    grub_generic: false
+    grub_generic: true
 
   tasks:
     - name: Validate system architecture is ppc64le
@@ -113,7 +113,7 @@
         state: mounted
       when: iso_stat.stat.exists
 
-    - name: Sync ISO content to repo directory (local rsync on host)
+    - name: Sync ISO content to repo directory (local rsync on host)  # noqa: command-instead-of-module
       ansible.builtin.shell: "rsync -a {{ iso_mount_point }}/ {{ repo_dir }}/"
       when: iso_stat.stat.exists
 
@@ -160,6 +160,7 @@
         dest: "{{ tftp_root }}/grub2-ppc64le/grub.cfg"
         mode: "0644"
       when: grub_generic | bool
+      tags: install_grub_generic
 
     - name: Display PXE structure summary
       ansible.builtin.debug:

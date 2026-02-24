@@ -179,7 +179,17 @@ ansible-playbook setup_kickstart_server.yml -i inventory/hosts.yml \
   -e "iso_path=/path/to/rhel-9.6-ppc64le-dvd.iso"
 ```
 
-Verwendet die Rolle `setup_rhel_pxe_structure` (ISO, Repo, TFTP, GRUB2) und konfiguriert danach dnsmasq, httpd und Firewall.
+Legt ISO/Repo/TFTP-Struktur an (Mount, rsync, GRUB2, Kernel/Initrd), installiert den Standard-TFTP-Server (tftp-server) und httpd und konfiguriert Firewall sowie SELinux.
+
+### Nur GRUB-Konfiguration aktualisieren
+
+Um ausschließlich die generische `grub.cfg` für Power-Network-Boot neu zu installieren (z. B. nach Änderung an `templates/grub_generic.cfg.j2`), das Playbook mit dem Tag `install_grub_generic` ausführen:
+
+```bash
+ansible-playbook setup_kickstart_server.yml -i inventory/hosts.yml --tags install_grub_generic
+```
+
+Es werden nur die Tasks mit diesem Tag ausgeführt; Voraussetzung ist, dass `grub_generic: true` gesetzt ist (Standard im Playbook).
 
 ## Upload Media (ISO/DVD Images)
 
@@ -376,7 +386,7 @@ power-playbooks/
 ├── create_empty_linux_lpar.yml # Nur LPAR anlegen (ohne VIOS-LV/Netboot)
 ├── create_linux_lpar.yml       # LPAR anlegen + VIOS-LV + Netboot-Install
 ├── create_lpar_lv.yml          # Nur LV auf VIOS anlegen und an LPAR mappen
-├── setup_kickstart_server.yml  # Kickstart-Server: RHEL-ISO, Repo, TFTP, dnsmasq, httpd
+├── setup_kickstart_server.yml  # Kickstart-Server: RHEL-ISO, Repo, TFTP (tftp-server), httpd
 ├── upload_media.yml            # ISO in HMC/VIOS-Repository hochladen
 ├── LPAR_INFO.yml               # LPAR-Infos vom HMC abfragen
 ├── inventory/
