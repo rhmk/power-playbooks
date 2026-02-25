@@ -1,0 +1,29 @@
+---
+# ISC DHCP (dhcpd): LPAR-Reservation in dhcpd.conf eintragen
+
+- name: Backup dhcpd.conf
+  ansible.builtin.copy:
+    src: /etc/dhcp/dhcpd.conf
+    dest: /tmp/dhcpd.conf.bak
+    remote_src: true
+    force: false
+  delegate_to: "{{ pxe_register_kickstart_host }}"
+  register: dhcpd_backup_result
+  failed_when: >
+    dhcpd_backup_result is failed
+    and ('no such file' not in (dhcpd_backup_result.msg | default('') | lower))
+    and ('not found' not in (dhcpd_backup_result.msg | default('') | lower))
+
+- name: Add LPAR block to dhcpd.conf
+  ansible.builtin.blockinfile:
+    path: /etc/dhcp/dhcpd.conf
+    marker: "# {mark} ANSIBLE register_lpar_pxe {{ pxe_register_lpar_name }}"
+    block: "{{ lookup('template', 'dhcpd_isc_block.j2') }}"
+    state: present
+  delegate_to: "{{ pxe_register_kickstart_host }}"
+
+- name: Restart dhcpd
+  ansible.builtin.systemd:
+    name: dhcpd
+    state: restarted
+  delegate_to: "{{ pxe_register_kickstart_host }}"

@@ -1,0 +1,29 @@
+%pre
+%end
+url --url="{{ pxe_register_ks_http_base }}/{{ pxe_register_repo_dir }}/BaseOS"
+text
+keyboard --vckeymap=us --xlayouts='us'
+lang en_US.UTF-8
+rootpw --plaintext {{ pxe_register_root_password }}
+skipx
+timezone {{ pxe_register_timezone | default('Europe/Berlin') }} --utc
+zerombr
+clearpart --all --initlabel --drives=sda
+bootloader --append="crashkernel=2G-4G:384M,4G-16G:512M,16G-64G:1G,64G-128G:2G,128G-:4G" --location=mbr --boot-drive=sda
+ignoredisk --only-use=sda
+autopart --fstype=ext4
+services --enabled="NetworkManager,sshd"
+reboot
+
+%packages
+@core
+device-mapper-multipath
+kexec-tools
+%end
+
+%post
+sed -i 's/#\?PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config; service sshd restart; multipath -t >/etc/multipath.conf; service multipathd start
+%end
+
+%addon com_redhat_kdump --enable --reserve-mb='auto'
+%end

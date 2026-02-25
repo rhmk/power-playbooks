@@ -1,0 +1,35 @@
+{
+  "hostname": "{{ lpar_name }}",
+  "hw-address": "{{ lpar_hardware_ethernet }}",
+  "ip-address": "{{ lpar_host_ip }}",
+  "next-server": "{{ nextserver_ip | default('10.32.98.240') }}",
+  "boot-file-name": "grub2-ppc64le/powerpc-ieee1275/core.elf",
+  "option-data": [
+    {
+      "space": "dhcp4",
+      "name": "host-name",
+      "code": 12,
+      "data": "{{ hostname | default(lpar_name, true) }}"
+    },
+    {
+      "space": "dhcp4",
+      "name": "domain-name",
+      "code": 15,
+      "data": "{{ dhcp_domain_name | default('coe.muc.redhat.com') }}"
+    },
+    {
+      "space": "dhcp4",
+      "name": "tftp-server-name",
+      "code": 66,
+      "data": "{{ nextserver_ip | default('10.32.98.240') }}",
+      "always-send": true
+    },
+    {
+      "space": "dhcp4",
+      "name": "boot-file-name",
+      "data": "grub2-ppc64le/powerpc-ieee1275/core.elf",
+      "code": 67,
+      "always-send": true
+    }
+  ]
+},

@@ -1,0 +1,10 @@
+# {{ ansible_managed }}
+# GRUB2 config for Power LPAR netinstall (ks-power.cfg.j2)
+set timeout=1
+insmod http
+insmod tftp
+insmod linux
+set root=tftp,{{ kickstart_server_ip }}
+echo 'Loading OS Install kernel ...'
+linux {{ lpar_mac_address }}/ppc/ppc64/vmlinuz ifname=net0:{{ lpar_hardware_ethernet }} ip={{ lpar_host_ip }}::{{ lpar_gateway }}:{{ lpar_netmask }}:{{ hostname }}:net0:none nameserver={{ lpar_dns }} inst.repo={{ ks_http_base }}/kickstart/rhel{{ rhel_major_version }}/ inst.ks={{ ks_http_base }}/kickstart/{{ ks_filename }} inst.text inst.sshd console=hvc0
+initrd {{ lpar_mac_address }}/ppc/ppc64/initrd.img

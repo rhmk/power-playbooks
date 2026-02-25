@@ -1,0 +1,246 @@
+---
+# yamllint disable rule:quoted-strings
+# Ansible Playbook: LPAR Network Install (nach lpar_create.yml)
+#
+# Nach dem Erzeugen einer LPAR mit Storage wird diese für Netinstall vorbereitet:
+# 1) MAC von HMC holen, Kea-DHCP-Reservation auf dem bootp_server anlegen
+# 2) PXE-Boot-Umgebung auf dem Kickstart-Server (GRUB + Kickstart aus ks-power.cfg.j2)
+# 3) LPAR von der HMC aus per lpar_netboot starten
+#
+# Usage:
+#   ansible-playbook lpar_netinstall.yml -i inventory/hosts.yml \
+#     -e "lpar_name=mkoch02" \
+#     -e "managed_system=power91" \
+#     -e "rhel_release=9.6" \
+#     -e "lpar_host_ip=10.32.98.55" \
+#     -e "hmc_password=PASSWORD"
+#   Optional: -e "hostname=mkoch02" -e "nextserver_ip=10.32.98.240" \
+#     -e "server_type=App-Server" -e "virtual_network=VLAN1-ETHERNET0"
+#
+# Prerequisites: LPAR bereits mit lpar_create.yml erzeugt (mit Netzwerk).
+
+# =============================================================================
+# PLAY 1: MAC von LPAR holen, Kea-Reservation auf bootp_server anlegen
+# =============================================================================
+
+- name: Get LPAR MAC and add Kea DHCP reservation on bootp server
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    lpar_name: ""
+    managed_system: ""
+    rhel_release: "9"             # e.g. 9, 9.6, 10
+    hostname: ""                  # defaults to lpar_name
+    lpar_host_ip: ""              # gewünschte IP-Adresse
+    nextserver_ip: "{{ hostvars[groups['kickstart_servers'] | first].ansible_host | default('10.32.98.240') }}"
+    server_type: "not defined"    # Freitext für ks-power.cfg.j2
+    virtual_network: "VLAN1-ETHERNET0"
+    kea_reservations_file: "/etc/kea/kea-dhcp4-reservations-ibmpower-auto.conf"
+    kea_main_config: "/etc/kea/kea-dhcp4.conf"
+    kea_service_name: "kea-dhcp4"   # or kea-dhcp4-server on some systems
+    dhcp_domain_name: "{{ hostvars[groups['bootp_servers'] | first].domain_name | default('coe.muc.redhat.com') }}"
+    hmc_host: "{{ groups['hmc'] | first | default('') }}"
+    hmc_username: "hscroot"
+    hmc_password: ""
+
+  tasks:
+    - name: Set hostname default to lpar_name
+      ansible.builtin.set_fact:
+        hostname: "{{ hostname | default(lpar_name, true) }}"
+
+    - name: Validate required variables (play 1)
+      ansible.builtin.assert:
+        that:
+          - lpar_name | length > 0
+          - managed_system | length > 0
+          - lpar_host_ip | length > 0
+          - hmc_host | length > 0
+          - hmc_password | length > 0
+        fail_msg: "Set lpar_name, managed_system, lpar_host_ip, hmc_password (and hmc_host or inventory group hmc)."
+
+    - name: Get LPAR facts from HMC (for MAC)
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ hmc_host }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ managed_system }}"
+        vm_name: "{{ lpar_name }}"
+        advanced_info: true
+        state: facts
+      register: lpar_facts_result
+
+    - name: Find MAC address for network
+      ansible.builtin.set_fact:
+        lpar_mac_address: "{{ item.mac_address }}"
+      loop: "{{ lpar_facts_result.partition_info.VirtualNetworkAdapters }}"
+      when: item.virtual_network_name == virtual_network
+
+    - name: Fail if MAC not found
+      ansible.builtin.fail:
+        msg: "MAC not found for network {{ virtual_network }} on LPAR {{ lpar_name }}"
+      when: lpar_mac_address is not defined or lpar_mac_address | length == 0
+
+    - name: MAC in colon format (hw-address for Kea)
+      ansible.builtin.set_fact:
+        lpar_hardware_ethernet: "{{ lpar_mac_address | regex_replace('(..)(..)(..)(..)(..)(..)', '\\1:\\2:\\3:\\4:\\5:\\6') }}"
+
+    - name: MAC in hyphen format (for grub.cfg-01-...)
+      ansible.builtin.set_fact:
+        lpar_mac_hyphen: "{{ lpar_mac_address | regex_replace('(..)(..)(..)(..)(..)(..)', '\\1-\\2-\\3-\\4-\\5-\\6') }}"
+
+    - name: MAC in colon-lowercase format (matching GRUB2 $net_default_mac)
+      ansible.builtin.set_fact:
+        lpar_mac_grub: "{{ lpar_hardware_ethernet | lower }}"
+
+    - name: Check Kea DHCP4 config before touching it
+      ansible.builtin.command:
+        cmd: "kea-dhcp4 -t {{ kea_main_config }}"
+        chdir: /
+      register: kea_test_result
+      changed_when: false
+      delegate_to: "{{ groups['bootp_servers'] | first }}"
+
+    - name: Check Kea reservations directory exists on bootp server
+      ansible.builtin.stat:
+        path: "{{ kea_reservations_file | dirname }}"
+      register: kea_reservations_dir_stat
+      delegate_to: "{{ groups['bootp_servers'] | first }}"
+      failed_when: not kea_reservations_dir_stat.stat.exists or not kea_reservations_dir_stat.stat.isdir
+
+    - name: Set path for Kea snippet temp file
+      ansible.builtin.set_fact:
+        kea_snippet_tmp_path: "{{ lookup('env', 'TMPDIR') | default('/tmp') }}/kea-snippet-{{ lpar_name }}.conf"
+
+    - name: Render Kea reservation snippet to temp file on controller
+      ansible.builtin.template:
+        src: templates/kea-dhcp4-snippet-conf.j2
+        dest: "{{ kea_snippet_tmp_path }}"
+        mode: "0600"
+      delegate_to: localhost
+
+    - name: Add LPAR reservation to Kea DHCP4 reservations file
+      ansible.builtin.blockinfile:
+        path: "{{ kea_reservations_file }}"
+        marker: "# {mark} ANSIBLE lpar_netinstall {{ lpar_name }}"
+        block: "{{ lookup('file', kea_snippet_tmp_path) | string }}"
+        backup: true
+      delegate_to: "{{ groups['bootp_servers'] | first }}"
+      throttle: 1
+      register: kea_reservations_result
+
+    - name: Test Kea DHCP4 config
+      ansible.builtin.command:
+        cmd: "kea-dhcp4 -t {{ kea_main_config }}"
+        chdir: /
+      register: kea_test_result
+      changed_when: false
+      delegate_to: "{{ groups['bootp_servers'] | first }}"
+
+    - name: Reload Kea DHCP4 service  # noqa: literal-compare
+      ansible.builtin.systemd:
+        name: "{{ kea_service_name }}"
+        state: reloaded
+      delegate_to: "{{ groups['bootp_servers'] | first }}"
+      when:
+        - kea_test_result.rc == 0
+        - kea_reservations_result.changed
+
+    - name: Fail if Kea config test failed
+      ansible.builtin.fail:
+        msg: "Kea config test failed. Fix {{ kea_main_config }} or reservations file."
+      when: kea_test_result.rc != 0
+
+    - name: Set facts on localhost for next plays
+      ansible.builtin.set_fact:
+        lpar_name: "{{ lpar_name }}"
+        managed_system: "{{ managed_system }}"
+        rhel_release: "{{ rhel_release }}"
+        hostname: "{{ hostname }}"
+        lpar_host_ip: "{{ lpar_host_ip }}"
+        nextserver_ip: "{{ nextserver_ip }}"
+        server_type: "{{ server_type }}"
+        virtual_network: "{{ virtual_network }}"
+        lpar_mac_grub: "{{ lpar_mac_grub }}"
+
+# =============================================================================
+# PLAY 2: MAC-spezifische GRUB-Config + Kickstart-Datei auf Kickstart-Server
+# (Kickstart-Server ist bereits vorbereitet; nur grub.cfg-01-<MAC> und ks anlegen.)
+# =============================================================================
+
+- name: Deploy MAC-specific GRUB config and kickstart file on kickstart server
+  hosts: kickstart_servers
+  gather_facts: true
+  vars:
+    lpar_name: "{{ hostvars['localhost'].lpar_name }}"
+    managed_system: "{{ hostvars['localhost'].managed_system }}"
+    rhel_release: "{{ hostvars['localhost'].rhel_release }}"
+    hostname: "{{ hostvars['localhost'].hostname }}"
+    lpar_host_ip: "{{ hostvars['localhost'].lpar_host_ip }}"
+    nextserver_ip: "{{ hostvars['localhost'].nextserver_ip }}"
+    server_type: "{{ hostvars['localhost'].server_type }}"
+    virtual_network: "{{ hostvars['localhost'].virtual_network }}"
+    lpar_mac_address: "{{ hostvars['localhost'].lpar_mac_address }}"
+    lpar_hardware_ethernet: "{{ hostvars['localhost'].lpar_hardware_ethernet }}"
+    lpar_mac_hyphen: "{{ hostvars['localhost'].lpar_mac_hyphen }}"
+    lpar_mac_grub: "{{ hostvars['localhost'].lpar_mac_grub }}"
+    tftp_base_dir: "/var/lib/tftpboot"
+    kickstart_base_dir: "/var/www/html/kickstart"
+    kickstart_server_ip: "{{ ansible_host | default(inventory_hostname) }}"
+    dhcp_domain_name: "{{ hostvars[inventory_hostname].domain_name | default('coe.muc.redhat.com') }}"
+    ks_language: "en_US.UTF-8"
+    ks_keyboard: "us"
+    ks_timezone: "Europe/Berlin"
+
+  tasks:
+    - name: Set RHEL version facts
+      ansible.builtin.set_fact:
+        rhel_major_version: "{{ (rhel_release | string).split('.')[0] | int }}"
+        rhel_version: "{{ rhel_release | string }}"
+
+    - name: Deploy MAC-specific grub.cfg (grub.cfg-01-<MAC> with colons, matching GRUB2 $net_default_mac)
+      ansible.builtin.template:
+        src: templates/grub.cfg.j2
+        dest: "{{ tftp_base_dir }}/grub2-ppc64le/grub.cfg-01-{{ lpar_mac_grub }}"
+        mode: "0644"
+      vars:
+        kickstart_ks_path: "ks/ks-power-{{ lpar_name }}.cfg"
+
+    - name: Deploy LPAR-specific kickstart file to webserver
+      ansible.builtin.template:
+        src: templates/ks-power.cfg.j2
+        dest: "{{ kickstart_base_dir }}/ks/ks-power-{{ lpar_name }}.cfg"
+        mode: "0644"
+
+# =============================================================================
+# PLAY 3: LPAR von HMC aus netboot starten
+# =============================================================================
+
+- name: Boot LPAR from HMC (lpar_netboot)
+  hosts: hmc
+  gather_facts: false
+  vars:
+    lpar_name: "{{ hostvars['localhost'].lpar_name }}"
+    managed_system: "{{ hostvars['localhost'].managed_system }}"
+    boot_profile: "default_profile"  ## Todo: get from HMC/LPAR config
+
+  tasks:
+    - name: Run lpar_netboot on HMC
+      ansible.builtin.raw: >
+        lpar_netboot
+        -t ent
+        -s auto
+        -d auto
+        {{ lpar_name }}
+        {{ boot_profile }}
+        {{ managed_system }}
+      register: netboot_result
+      changed_when: true
+      failed_when: false
+
+    - name: Show netboot result
+      ansible.builtin.debug:
+        msg: "lpar_netboot finished (rc={{ netboot_result.rc | default('?') }}). LPAR {{ lpar_name }} netboot started."
+      when: netboot_result is defined

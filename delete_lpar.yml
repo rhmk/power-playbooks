@@ -1,0 +1,85 @@
+---
+# Ansible Playbook: Delete (remove) an LPAR
+#
+# Shuts down the LPAR if running and removes it from the managed system.
+#
+# Usage:
+#   ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+#     -e "lpar_name=my_lpar" \
+#     -e "managed_system=power91" \
+#     -e "hmc_pass=PASSWORD"
+#
+#   With optional confirmation (no prompt, use -e confirm_delete=yes):
+#   ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+#     -e "lpar_name=my_lpar" -e "managed_system=power91" \
+#     -e "hmc_pass=PASSWORD" -e "confirm_delete=yes"
+
+- name: Delete LPAR
+  hosts: hmc
+  connection: local
+  gather_facts: false
+
+  environment:
+    REQUESTS_CA_BUNDLE: ""
+    CURL_CA_BUNDLE: ""
+
+  vars:
+    lpar_name: ""
+    managed_system: ""  # If empty, must be set per host or via managed_systems_list
+    hmc_username: "{{ hmc_user | default('hscroot') }}"
+    hmc_password: "{{ hmc_pass | default('') }}"
+    confirm_delete: false  # Set to true to skip confirmation prompt
+    _managed_system: "{{ managed_system | default(managed_systems_list[0]) }}"
+
+  tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - hmc_password | length > 0
+          - lpar_name | length > 0
+          - _managed_system | length > 0
+        fail_msg: |
+          Provide: lpar_name, hmc_pass, and managed_system (or set in inventory).
+
+    - name: Confirm LPAR deletion
+      ansible.builtin.fail:
+        msg: "LPAR '{{ lpar_name }}' on {{ _managed_system }} will be deleted. Set -e confirm_delete=yes to proceed."
+      when: not confirm_delete | default(false) | bool
+
+    - name: Shutdown LPAR if running
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        vm_name: "{{ lpar_name }}"
+        system_name: "{{ _managed_system }}"
+        action: shutdown
+      register: shutdown_result
+      failed_when: >
+        shutdown_result is failed
+        and ('already' not in (shutdown_result.msg | default('') | lower))
+        and ('not found' not in (shutdown_result.msg | default('') | lower))
+        and ('no such' not in (shutdown_result.msg | default('') | lower))
+
+    - name: Wait for LPAR to stop
+      ansible.builtin.pause:
+        seconds: 15
+        prompt: Waiting for LPAR to shut down before removal...
+      when: shutdown_result is changed
+
+    - name: Delete LPAR
+      ibm.power_hmc.powervm_lpar_instance:
+        hmc_host: "{{ inventory_hostname }}"
+        hmc_auth:
+          username: "{{ hmc_username }}"
+          password: "{{ hmc_password }}"
+        system_name: "{{ _managed_system }}"
+        vm_name: "{{ lpar_name }}"
+        state: absent
+      register: delete_result
+
+    - name: Display result
+      ansible.builtin.debug:
+        msg: "LPAR '{{ lpar_name }}' has been deleted from {{ _managed_system }}."
+      when: delete_result is changed or not delete_result.failed

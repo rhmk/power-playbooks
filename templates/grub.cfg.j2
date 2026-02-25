@@ -25,7 +25,7 @@ menuentry 'Install RHEL {{ rhel_version }} for Power (Kickstart)' --class rhel -
     echo "Loading kernel..."
     linux boot/vmlinuz-rhel{{ rhel_major_version }} \
         inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
-        inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel{{ rhel_major_version }}-power.cfg \
+        inst.ks=http://{{ kickstart_server_ip }}/kickstart/{{ kickstart_ks_path | default('ks/ks-rhel' ~ rhel_major_version ~ '-power.cfg') }} \
         inst.text \
         inst.sshd \
         ip=dhcp \
@@ -52,7 +52,7 @@ menuentry 'Install RHEL {{ rhel_version }} for Power (VNC)' --class rhel --class
     echo "Loading kernel..."
     linux boot/vmlinuz-rhel{{ rhel_major_version }} \
         inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel{{ rhel_major_version }}/ \
-        inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel{{ rhel_major_version }}-power.cfg \
+        inst.ks=http://{{ kickstart_server_ip }}/kickstart/{{ kickstart_ks_path | default('ks/ks-rhel' ~ rhel_major_version ~ '-power.cfg') }} \
         inst.vnc \
         inst.vncpassword=kickstart \
         inst.sshd \

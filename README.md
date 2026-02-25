@@ -2,11 +2,17 @@
 
 Ansible playbooks for managing IBM Power Systems via HMC (Hardware Management Console).
 
+## Ziele des Repositories
+
+1. **LPARs anlegen und löschen** – LPAR erstellen (mit oder ohne Netboot), LV auf VIOS, LPAR löschen
+2. **LPARs per Netboot installieren** – RHEL-Installation über PXE/Kickstart (TFTP, DHCP, Kickstart-Datei)
+3. **Neue RHEL-Versionen auf dem Kickstart-Server ablegen** – ISO einspielen, Repo- und TFTP-Struktur anlegen
+
 ## Features
 
-- **Multiple managed systems per HMC** - Define a list of systems each HMC manages
-- **Individual LPAR control** - Power on/off specific LPARs by name
-- **Self-signed certificate support** - Works with HMCs using self-signed SSL certificates
+- **Multiple managed systems per HMC** – Liste verwalteter Systeme pro HMC
+- **LPAR-Steuerung** – Ein/Aus, Anlegen, Löschen
+- **Self-signed certificate support** – HMCs mit selbstsignierten Zertifikaten
 
 ## Prerequisites
 
@@ -148,6 +154,42 @@ ansible-playbook lpar_control.yml \
 ```
 
 If you don't specify `managed_system`, the playbook will search all systems defined in `managed_systems_list` to find the LPAR.
+
+## Delete LPAR
+
+Use `delete_lpar.yml` to remove an LPAR (LPAR is shut down first).
+
+```bash
+ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+  -e "lpar_name=my_lpar" \
+  -e "managed_system=power91" \
+  -e "hmc_pass=YOUR_PASSWORD" \
+  -e "confirm_delete=yes"
+```
+
+Without `confirm_delete=yes` the playbook exits with a reminder to set it.
+
+## Neue RHEL-Version auf Kickstart-Server
+
+Kickstart-Server einmalig einrichten oder neue RHEL-Version hinzufügen:
+
+```bash
+ansible-playbook setup_kickstart_server.yml -i inventory/hosts.yml \
+  -e "rhel_version=9.6" \
+  -e "iso_path=/path/to/rhel-9.6-ppc64le-dvd.iso"
+```
+
+Legt ISO/Repo/TFTP-Struktur an (Mount, rsync, GRUB2, Kernel/Initrd), installiert den Standard-TFTP-Server (tftp-server) und httpd und konfiguriert Firewall sowie SELinux.
+
+### Nur GRUB-Konfiguration aktualisieren
+
+Um ausschließlich die generische `grub.cfg` für Power-Network-Boot neu zu installieren (z. B. nach Änderung an `templates/grub_generic.cfg.j2`), das Playbook mit dem Tag `install_grub_generic` ausführen:
+
+```bash
+ansible-playbook setup_kickstart_server.yml -i inventory/hosts.yml --tags install_grub_generic
+```
+
+Es werden nur die Tasks mit diesem Tag ausgeführt; Voraussetzung ist, dass `grub_generic: true` gesetzt ist (Standard im Playbook).
 
 ## Upload Media (ISO/DVD Images)
 
@@ -338,16 +380,31 @@ Or add LPAR names to `/etc/hosts` on your control node.
 
 ```
 power-playbooks/
-├── power_control.yml       # System-level power control
-├── lpar_control.yml        # Individual LPAR power control
-├── create_linux_lpar.yml   # Create Linux LPAR for RHEL installation
-├── upload_media.yml        # Upload ISO/DVD images to HMC repository
+├── power_control.yml           # Managed Systems ein/aus
+├── lpar_control.yml            # Einzelne LPAR ein/aus
+├── delete_lpar.yml             # LPAR löschen (mit Bestätigung: -e confirm_delete=yes)
+├── create_empty_linux_lpar.yml # Nur LPAR anlegen (ohne VIOS-LV/Netboot)
+├── create_linux_lpar.yml       # LPAR anlegen + VIOS-LV + Netboot-Install
+├── create_lpar_lv.yml          # Nur LV auf VIOS anlegen und an LPAR mappen
+├── setup_kickstart_server.yml  # Kickstart-Server: RHEL-ISO, Repo, TFTP (tftp-server), httpd
+├── upload_media.yml            # ISO in HMC/VIOS-Repository hochladen
+├── LPAR_INFO.yml               # LPAR-Infos vom HMC abfragen
 ├── inventory/
-│   ├── hosts.yml           # Static HMC inventory
-│   └── lpars.power_hmc.yml # Dynamic LPAR inventory
-├── requirements.yml        # Ansible Galaxy dependencies
+│   ├── hosts.yml
+│   └── lpars.power_hmc.yml
+├── roles/
+│   ├── setup_rhel_pxe_structure/   # RHEL-ISO → Repo + TFTP (für Ziel 3)
+│   ├── register_lpar_pxe/          # LPAR für PXE registrieren (MAC, TFTP, Kickstart, DHCP)
+│   ├── create_lpar_lv/             # LV auf VIOS anlegen und mappen
+│   └── redhat_linux_install/       # Vollständige LPAR-Erstellung inkl. Netboot
+├── templates/                  # Für setup_kickstart_server
+├── requirements.yml
 └── README.md
 ```
+
+### Lokale Konfiguration (nicht versionieren)
+
+Die Dateien `my_lpar_cfg.yml` und `lpar_config.yml` sind in `.gitignore` eingetragen und werden **nicht** ins Repository oder auf den Server übernommen. Für Passwörter und lokale LPAR-Variablen verwenden (z. B. `-e @my_lpar_cfg.yml`); sensible Werte mit Ansible Vault schützen.
 
 ## Troubleshooting
 

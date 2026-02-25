@@ -182,7 +182,11 @@
         system_name: "{{ managed_system }}"
         state: facts
       register: vios_facts
-      ignore_errors: true
+      failed_when: >
+        vios_facts is failed
+        and ('connection' not in (vios_facts.msg | default('') | lower))
+        and ('timeout' not in (vios_facts.msg | default('') | lower))
+        and ('authentication' not in (vios_facts.msg | default('') | lower))
 
     - name: Display repository contents
       ansible.builtin.debug:

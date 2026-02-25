@@ -17,6 +17,10 @@
 #   create_lpar_lv_hmc_host        - HMC-Host (Default: inventory_hostname bei hosts: hmc)
 #   create_lpar_lv_hmc_username    - HMC-Benutzer
 #   create_lpar_lv_disk_size_gb    - Größe des LV in GB
+#   create_lpar_lv_vios_ip         - VIOS IP/Hostname (falls nicht gleich vios_name)
+#   create_lpar_lv_vios_user       - VIOS-SSH-User
+#   create_lpar_lv_vscsi_client_slot - vSCSI-Client-Slot an der LPAR
+#   create_lpar_lv_vscsi_server_slot - vSCSI-Server-Slot an der VIOS (leer = auto)
 #   create_lpar_lv_vtd_name        - VTD-Name für Mapping (leer = abgeleitet, max 15 Zeichen)
 
 # =============================================================================
@@ -24,7 +28,7 @@
 # =============================================================================
 # HMC-Host (wird oft aus Inventory gesetzt: inventory_hostname bei hosts: hmc)
 create_lpar_lv_hmc_host: "{{ inventory_hostname }}"
-create_lpar_lv_hmc_username: "{{ hmc_username | default('hscroot') }}"
+create_lpar_lv_hmc_username: "{{ hmc_user | default('hscroot') }}"
 # create_lpar_lv_hmc_password: ""   # Pflicht, via -e oder Vault
 
 # =============================================================================
@@ -44,10 +48,14 @@ create_lpar_lv_disk_size_gb: 50
 # VIOS
 # =============================================================================
 # create_lpar_lv_vios_name: ""        # Pflicht, z.B. power91-vios
+# create_lpar_lv_vios_ip: ""         # Optional (nur für Anzeige)
+# create_lpar_lv_vios_user / vios_password: nicht mehr benötigt (viosvrcmd von HMC)
 
 # =============================================================================
-# Virtual SCSI Slots
+# Virtual SCSI Slots (optional)
 # =============================================================================
-# Slots werden automatisch via next_avail_virtual_slot ermittelt.
-# VTD-Name für mkvdev (max 15 Zeichen); leer = aus LPAR-Name abgeleitet
+create_lpar_lv_vscsi_client_slot: 3
+# Server-Slot: leer = automatisch (PartitionID + 10)
+# create_lpar_lv_vscsi_server_slot: ""
+# VTD-Name für mkvdev (max 15 Zeichen); leer = aus volume_name/lpar_name abgeleitet
 # create_lpar_lv_vtd_name: ""

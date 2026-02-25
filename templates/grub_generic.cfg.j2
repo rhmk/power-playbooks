@@ -1,0 +1,131 @@
+# {{ ansible_managed }}
+#
+# GRUB2 Configuration for Power (ppc64le) Network Boot
+# This file is served via TFTP for Power LPAR kickstart installations
+#
+# GRUB2 does NOT auto-search for MAC-specific configs (unlike PXELINUX).
+# This config explicitly tries to load grub.cfg-01-<mac> before falling
+# through to the generic menu.
+#
+
+set default=0
+set timeout=60
+
+# Load required modules for network boot
+insmod net
+insmod efinet
+insmod http
+insmod linux
+
+# Menu colors
+set menu_color_normal=white/black
+set menu_color_highlight=black/light-gray
+
+# =============================================================================
+# MAC-specific config: try loading grub.cfg-01-<mac> (colons, as GRUB provides)
+# If found, configfile replaces this config entirely. If not, we fall through.
+# =============================================================================
+{% if grub_debug | default(false) | bool %}
+
+echo "=== GRUB2 Network Boot Debug ==="
+echo "net_default_mac:    ${net_default_mac}"
+echo "net_default_ip:     ${net_default_ip}"
+echo "net_default_server: ${net_default_server}"
+echo "prefix:             ${prefix}"
+echo "root:               ${root}"
+if [ -n "${net_default_mac}" ]; then
+    echo "Will try: ${prefix}/grub.cfg-01-${net_default_mac}"
+fi
+echo "=== Press any key to continue ==="
+sleep --interruptible 10
+{% endif %}
+
+if [ -n "${net_default_mac}" ]; then
+    configfile ${prefix}/grub.cfg-01-${net_default_mac}
+fi
+
+# =============================================================================
+# Fallback: Generic Boot Menu Entries
+# =============================================================================
+
+menuentry 'Install RHEL 10 for Power (Interactive)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel10 \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel10/ \
+        inst.text \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel10.img
+}
+
+menuentry 'Install RHEL 9 for Power (Interactive)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel9 \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel9/ \
+        inst.text \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel9.img
+}
+
+menuentry 'Install RHEL 10 for Power (VNC)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel10 \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel10/ \
+        inst.vnc \
+        inst.vncpassword=kickstart \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel10.img
+}
+
+menuentry 'Install RHEL 9 for Power (VNC)' --class rhel --class gnu-linux {
+    echo "Loading kernel..."
+    linux boot/vmlinuz-rhel9 \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel9/ \
+        inst.vnc \
+        inst.vncpassword=kickstart \
+        inst.sshd \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel9.img
+}
+
+menuentry 'Rescue Mode - RHEL 10' --class rhel --class gnu-linux {
+    echo "Loading rescue kernel..."
+    linux boot/vmlinuz-rhel10 \
+        inst.rescue \
+        inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel10/ \
+        ip=dhcp \
+        rd.neednet=1 \
+        console=hvc0
+    echo "Loading initrd..."
+    initrd boot/initrd-rhel10.img
+}
+
+menuentry 'Boot from local disk' {
+    echo "Booting from local disk..."
+    exit
+}
+
+# =============================================================================
+# Additional entries for other RHEL versions (uncomment as needed)
+# =============================================================================
+# menuentry 'Install RHEL 8 for Power (Kickstart)' --class rhel --class gnu-linux {
+#     linux boot/vmlinuz-rhel8 \
+#         inst.repo=http://{{ kickstart_server_ip }}/kickstart/rhel8/ \
+#         inst.ks=http://{{ kickstart_server_ip }}/kickstart/ks/ks-rhel8-power.cfg \
+#         ip=dhcp console=hvc0
+#     initrd boot/initrd-rhel8.img
+# }
