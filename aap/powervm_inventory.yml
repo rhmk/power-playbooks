@@ -1,0 +1,20 @@
+---
+plugin: ibm.power_hmc.powervm_inventory
+hmc_hosts:
+  - host: "{{ hmc_host }}"
+    user: "{{ hmc_user }}"
+    password: "{{ hmc_password }}"
+identify_user: "ansible"
+# Filters — adjust to your environment
+servers:
+  - managed_system_name: "*"
+lpar_types:
+  - AIX
+  - Linux
+  - IBMi
+group_by:
+  - managed_system_name
+  - os_type
+  - rmc_state
+compose:
+  ansible_host: rmc_ipaddr | default(omit)

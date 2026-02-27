@@ -1,0 +1,30 @@
+---
+# Sample project configuration for AAP Controller
+# This file defines projects that will be created in the AAP Controller
+
+controller_projects:
+  - name: "Demo Project"
+    description: "Sample project for demonstration purposes"
+    organization: "Default"
+    scm_type: git
+    scm_url: "https://github.com/ansible/ansible-examples.git"
+    scm_branch: "master"
+    scm_clean: true
+    scm_delete_on_update: false
+    scm_update_on_launch: true
+    scm_update_cache_timeout: 0
+    allow_override: false
+    timeout: 0
+
+  - name: "Validated Patterns Project"
+    description: "Project for validated patterns automation"
+    organization: "Default"
+    scm_type: git
+    scm_url: "https://github.com/validatedpatterns/common.git"
+    scm_branch: "main"
+    scm_clean: true
+    scm_delete_on_update: false
+    scm_update_on_launch: true
+    scm_update_cache_timeout: 0
+    allow_override: false
+    timeout: 0

@@ -62,9 +62,9 @@
         and ('not found' not in (shutdown_result.msg | default('') | lower))
         and ('no such' not in (shutdown_result.msg | default('') | lower))
 
-    - name: Wait for LPAR to stop
+    - name: Wait for LPAR to stop  # noqa: no-handler
       ansible.builtin.pause:
-        seconds: 15
+        seconds: 30
         prompt: Waiting for LPAR to shut down before removal...
       when: shutdown_result is changed
 

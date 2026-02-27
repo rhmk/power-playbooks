@@ -1,0 +1,9 @@
+# Files to ignore when loading AAP configuration
+# Add patterns for files that should not be processed by the dispatcher role
+
+*.md
+*.txt
+*.log
+ignore_files
+README*
+.gitkeep

@@ -1,0 +1,54 @@
+---
+# This playbook is meant to postconfigure an AAP installation on OpenShift
+#
+# Prerequisites:
+# - Install required collections: ansible-galaxy collection install -r common/requirements.yml
+# - OpenShift secret 'aap-manifest' containing the AAP license manifest
+# - AAP instance running on OpenShift with accessible route
+#
+# CLI testing
+# oc login -u kubeadmin -p <password> https://api.cluster-qqw7r.qqw7r.sandbox598.opentlc.com:6443
+# ansible-playbook -e @ocp_credentials.yml aap_postinstall_manifest.yaml
+#
+#  ALternative set the K8S_AUTH_KUBECONFIG to the kubeconfig file with access rights to the cluster
+#  export K8S_AUTH_KUBECONFIG=/home/joe/.kube/config
+
+
+- name: AAP Post-Installation Configuration - configure AAP components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # aap_namespace: "aap"
+    # aap_app_name: 'example-aap'
+    aap_username: 'admin'
+    aap_password: ''
+    controller_postinstall_dir: './aap_config'
+    controller_postinstall_ignore_files: './aap_config/ignore_files'
+    automation_controller_hostname: ""
+    aap_validate_certs: false
+    # aap_configuration_dispatcher_roles: {{ controller_configuration_dispatcher_roles }}
+
+  tasks:
+    - name: Assert that password and conttoller hostname are set
+      ansible.builtin.assert:
+        that:
+          - aap_password | length > 0
+          - automation_controller_hostname | length > 0
+        fail_msg: |
+          Invalid configuration:
+          - aap_password must be set
+          - automation_controller_hostname must be set
+
+    - name: Include vars for automation controller
+      ansible.builtin.include_vars:
+        dir: '{{ controller_postinstall_dir }}'
+        extensions:
+          - yml
+          - yaml
+        ignore_files: '{{ controller_postinstall_ignore_files }}'
+        ignore_unknown_extensions: true
+
+    - name: Execute automation controller resource configuration
+      ansible.builtin.include_role:
+        name: infra.aap_configuration.dispatch

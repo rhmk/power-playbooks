@@ -1,0 +1,78 @@
+---
+# Sample job template configuration for AAP Controller
+# This file defines job templates that will be created in the AAP Controller
+
+controller_job_templates:
+  - name: "Hello World"
+    description: "Simple demo job template"
+    organization: "Default"
+    project: "Demo Project"
+    playbook: "hello_world.yml"
+    inventory: "Demo Inventory"
+    credential: "Demo SSH Credential"
+    job_type: "run"
+    concurrent_jobs_enabled: true
+    ask_scm_branch_on_launch: false
+    ask_diff_mode_on_launch: false
+    ask_variables_on_launch: true
+    ask_limit_on_launch: false
+    ask_tags_on_launch: false
+    ask_skip_tags_on_launch: false
+    ask_job_type_on_launch: false
+    ask_verbosity_on_launch: false
+    ask_inventory_on_launch: false
+    ask_credential_on_launch: false
+    survey_enabled: false
+    become_enabled: false
+    timeout: 0
+    verbosity: 0
+    extra_vars:
+      demo_message: "Hello from AAP!"
+
+  - name: "System Info"
+    description: "Gather system information from hosts"
+    organization: "Default"
+    project: "Demo Project"
+    playbook: "system_info.yml"
+    inventory: "Demo Inventory"
+    credential: "Demo SSH Credential"
+    job_type: "run"
+    concurrent_jobs_enabled: true
+    ask_scm_branch_on_launch: false
+    ask_diff_mode_on_launch: false
+    ask_variables_on_launch: false
+    ask_limit_on_launch: true
+    ask_tags_on_launch: false
+    ask_skip_tags_on_launch: false
+    ask_job_type_on_launch: false
+    ask_verbosity_on_launch: false
+    ask_inventory_on_launch: false
+    ask_credential_on_launch: false
+    survey_enabled: false
+    become_enabled: true
+    timeout: 0
+    verbosity: 1
+
+  - name: "OpenShift Operations"
+    description: "Perform operations on OpenShift cluster"
+    organization: "Default"
+    project: "Validated Patterns Project"
+    playbook: "openshift-operations.yml"
+    inventory: "Demo Inventory"
+    credential: "OpenShift Credential"
+    job_type: "run"
+    concurrent_jobs_enabled: false
+    ask_scm_branch_on_launch: true
+    ask_diff_mode_on_launch: false
+    ask_variables_on_launch: true
+    ask_limit_on_launch: false
+    ask_tags_on_launch: true
+    ask_skip_tags_on_launch: false
+    ask_job_type_on_launch: false
+    ask_verbosity_on_launch: false
+    ask_inventory_on_launch: false
+    ask_credential_on_launch: false
+    survey_enabled: false
+    become_enabled: false
+    timeout: 1800
+    verbosity: 0

@@ -1,0 +1,28 @@
+---
+# Inventory configuration for AAP Controller
+
+controller_inventories:
+  - name: "IBM Power LPARs"
+    description: "Inventory that lists all LPARs"
+    organization: "sap"
+    variables:
+      ansible_connection: local
+      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+  - name: "PowerVM Dynamic Inventory"
+    description: "Dynamic inventory sourced from HMC via ibm.power_hmc.powervm_inventory"
+    organization: "sap"
+
+controller_inventory_sources:
+  - name: "HMC PowerVM Source"
+    description: "Dynamic inventory from HMC using ibm.power_hmc.powervm_inventory plugin"
+    inventory: "PowerVM Dynamic Inventory"
+    organization: "sap"
+    source: scm
+    source_project: "Power Playbooks"
+    source_path: "aap/powervm_inventory.yml"
+    credential: "HMC Credential"
+    overwrite: true
+    overwrite_vars: true
+    update_on_launch: true
+    update_cache_timeout: 0

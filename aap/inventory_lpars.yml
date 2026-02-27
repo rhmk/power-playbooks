@@ -1,0 +1,29 @@
+---
+# AAP Inventory: LPAR hosts lpar01..lpar09
+# IPs konfigurierbar über aap/vars/lpar_inventory.yml (lpar_ip_base).
+# Default: 10.32.98.241 bis 10.32.98.249
+
+all:
+  children:
+    lpars:
+      hosts:
+        lpar01:
+          ansible_host: 10.32.98.241
+        lpar02:
+          ansible_host: 10.32.98.242
+        lpar03:
+          ansible_host: 10.32.98.243
+        lpar04:
+          ansible_host: 10.32.98.244
+        lpar05:
+          ansible_host: 10.32.98.245
+        lpar06:
+          ansible_host: 10.32.98.246
+        lpar07:
+          ansible_host: 10.32.98.247
+        lpar08:
+          ansible_host: 10.32.98.248
+        lpar09:
+          ansible_host: 10.32.98.249
+      vars:
+        ansible_user: root
