@@ -1,6 +1,0 @@
----
-# Abgeleitete Variablen (Kickstart-Server-Host)
-pxe_register_kickstart_host: "{{ pxe_register_kickstart_server | default(groups['kickstart_servers'][0]) }}"
-pxe_register_ks_http_base: "http://{{ hostvars[pxe_register_kickstart_host].ansible_host | default(pxe_register_kickstart_host) }}:{{ pxe_register_repo_port }}"
-# Core-ELF-Pfad für DHCP (next-server + filename)
-pxe_register_core_file_path: "grub2-ppc64le/powerpc-ieee1275/core.elf"

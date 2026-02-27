@@ -157,10 +157,10 @@ If you don't specify `managed_system`, the playbook will search all systems defi
 
 ## Delete LPAR
 
-Use `delete_lpar.yml` to remove an LPAR (LPAR is shut down first).
+Use `lpar_delete.yml` to remove an LPAR (LPAR is shut down first).
 
 ```bash
-ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+ansible-playbook lpar_delete.yml -i inventory/hosts.yml \
   -e "lpar_name=my_lpar" \
   -e "managed_system=power91" \
   -e "hmc_pass=YOUR_PASSWORD" \
@@ -239,12 +239,12 @@ By default, images are stored in `uploaded_images` directory. Override with:
 
 ## Create Linux LPAR
 
-Use `create_linux_lpar.yml` to create a new Linux LPAR configured for RHEL installation from a DVD ISO on VIOS.
+Use `lpar_create.yml` to create a new Linux LPAR configured for RHEL installation from a DVD ISO on VIOS.
 
 ### Basic Usage
 
 ```bash
-ansible-playbook create_linux_lpar.yml \
+ansible-playbook lpar_create.yml \
   -i inventory/hosts.yml \
   -e "lpar_name=rhel-server01" \
   -e "hmc_pass=YOUR_PASSWORD"
@@ -253,7 +253,7 @@ ansible-playbook create_linux_lpar.yml \
 ### With Custom Resources
 
 ```bash
-ansible-playbook create_linux_lpar.yml \
+ansible-playbook lpar_create.yml \
   -i inventory/hosts.yml \
   -e "lpar_name=rhel-server01" \
   -e "lpar_cpu=4" \
@@ -265,7 +265,7 @@ ansible-playbook create_linux_lpar.yml \
 ### Full Configuration Example
 
 ```bash
-ansible-playbook create_linux_lpar.yml \
+ansible-playbook lpar_create.yml \
   -i inventory/hosts.yml \
   -e "lpar_name=rhel-server01" \
   -e "lpar_cpu=4" \
@@ -273,8 +273,8 @@ ansible-playbook create_linux_lpar.yml \
   -e "lpar_cpu_max=8" \
   -e "lpar_mem=16384" \
   -e "lpar_disk=200" \
-  -e "vios_partition=vios1" \
-  -e "vnet_name=ETHERNET0" \
+  -e "vios_name=vios1" \
+  -e "virtual_network=ETHERNET0" \
   -e "hmc_pass=YOUR_PASSWORD"
 ```
 
@@ -290,9 +290,10 @@ ansible-playbook create_linux_lpar.yml \
 | `lpar_mem_min` | `2048` | Minimum memory in MB |
 | `lpar_mem_max` | `16384` | Maximum memory in MB |
 | `lpar_disk` | `50` | Disk size in GB |
-| `vios_partition` | `vios1` | VIOS partition name |
-| `vnet_name` | `ETHERNET0` | Virtual network name |
-| `vnet_vlan` | `0` | VLAN ID (0 = untagged) |
+| `vios_name` | *(required)* | VIOS partition name |
+| `vios_volume_group` | *(required)* | Volume group on VIOS for LPAR disk |
+| `virtual_network` | `VLAN1-ETHERNET0` | Virtual network name |
+| `vlan_id` | `1` | VLAN ID (0 = untagged) |
 
 ### VIOS Setup for DVD Installation
 
@@ -382,22 +383,23 @@ Or add LPAR names to `/etc/hosts` on your control node.
 power-playbooks/
 ├── power_control.yml           # Managed Systems ein/aus
 ├── lpar_control.yml            # Einzelne LPAR ein/aus
-├── delete_lpar.yml             # LPAR löschen (mit Bestätigung: -e confirm_delete=yes)
-├── create_empty_linux_lpar.yml # Nur LPAR anlegen (ohne VIOS-LV/Netboot)
-├── create_linux_lpar.yml       # LPAR anlegen + VIOS-LV + Netboot-Install
-├── create_lpar_lv.yml          # Nur LV auf VIOS anlegen und an LPAR mappen
+├── lpar_delete.yml             # LPAR löschen (mit Bestätigung: -e confirm_delete=yes)
+├── lpar_create.yml             # LPAR anlegen + VIOS-LV (hmc_create_lpar_lv_api)
+├── lpar_create_old.yml         # LPAR anlegen + Rolle create_lpar_lv
+├── lpar_netinstall.yml         # LPAR für Netboot: Kea-DHCP, GRUB, Kickstart, lpar_netboot
+├── add_lv_to_lpar.yml          # Nur LV auf VIOS anlegen und an LPAR mappen (Rolle create_lpar_lv)
 ├── setup_kickstart_server.yml  # Kickstart-Server: RHEL-ISO, Repo, TFTP (tftp-server), httpd
 ├── upload_media.yml            # ISO in HMC/VIOS-Repository hochladen
-├── LPAR_INFO.yml               # LPAR-Infos vom HMC abfragen
+├── download_rhel_media.yml      # RHEL-DVD-ISO von Red Hat API herunterladen
+├── lpar_info.yml               # LPAR-Infos vom HMC abfragen
 ├── inventory/
 │   ├── hosts.yml
+│   ├── group_vars/
 │   └── lpars.power_hmc.yml
 ├── roles/
-│   ├── setup_rhel_pxe_structure/   # RHEL-ISO → Repo + TFTP (für Ziel 3)
-│   ├── register_lpar_pxe/          # LPAR für PXE registrieren (MAC, TFTP, Kickstart, DHCP)
-│   ├── create_lpar_lv/             # LV auf VIOS anlegen und mappen
-│   └── redhat_linux_install/       # Vollständige LPAR-Erstellung inkl. Netboot
-├── templates/                  # Für setup_kickstart_server
+│   └── create_lpar_lv/        # LV auf VIOS anlegen und mappen
+├── library/                   # Lokale Module (hmc_create_lpar_lv, hmc_create_lpar_lv_api)
+├── templates/                 # Für setup_kickstart_server, lpar_netinstall
 ├── requirements.yml
 └── README.md
 ```

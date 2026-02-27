@@ -4,13 +4,13 @@
 # Shuts down the LPAR if running and removes it from the managed system.
 #
 # Usage:
-#   ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+#   ansible-playbook lpar_delete.yml -i inventory/hosts.yml \
 #     -e "lpar_name=my_lpar" \
 #     -e "managed_system=power91" \
 #     -e "hmc_pass=PASSWORD"
 #
 #   With optional confirmation (no prompt, use -e confirm_delete=yes):
-#   ansible-playbook delete_lpar.yml -i inventory/hosts.yml \
+#   ansible-playbook lpar_delete.yml -i inventory/hosts.yml \
 #     -e "lpar_name=my_lpar" -e "managed_system=power91" \
 #     -e "hmc_pass=PASSWORD" -e "confirm_delete=yes"
 
