@@ -1,0 +1,30 @@
+---
+# Sample project configuration for AAP Controller
+# This file defines projects that will be created in the AAP Controller
+
+controller_projects:
+  - name: "IBM Power"
+    description: "Playbooks for creating and managing LPARs"
+    organization: "sap"
+    scm_type: git
+    scm_url: "https://github.com/rhmk/power-playbooks.git"
+    scm_branch: "main"
+    scm_clean: true
+    scm_delete_on_update: false
+    scm_update_on_launch: false
+    scm_update_cache_timeout: 0
+    allow_override: true
+    timeout: 0
+
+  - name: "SAP Project"
+    description: "SAP Demo Playbooks"
+    organization: "sap"
+    scm_type: git
+    scm_url: "https://github.com/redhat-sap/demo.sap_install.git"
+    scm_branch: "dev"
+    scm_clean: true
+    scm_delete_on_update: false
+    scm_update_on_launch: true
+    scm_update_cache_timeout: 0
+    allow_override: true
+    timeout: 0

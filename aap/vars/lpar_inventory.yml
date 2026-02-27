@@ -1,0 +1,10 @@
+---
+# Konfiguration für AAP Inventory "SAP LPARs" (lpar01..lpar09)
+# Anpassen und bei Import/Update verwenden.
+
+lpar_hostname_prefix: "lpar"
+lpar_count: 9
+lpar_ip_base: "10.32.98.241"   # Erste IP; folgende: .242, .243, ... .249
+
+# Generierte Liste (wird von setup_aap.yml genutzt)
+# lpar_hosts: [ { name: lpar01, ip: 10.32.98.241 }, ... ]

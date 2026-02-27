@@ -1,0 +1,21 @@
+---
+# Sample workflow job template configuration for AAP Controller
+# This file defines workflow job templates that will be created in the AAP Controller
+
+controller_workflow_job_templates:
+  - name: "Demo Workflow"
+    description: "Sample workflow demonstrating multiple job execution"
+    organization: "Default"
+    survey_enabled: false
+    allow_simultaneous: false
+    ask_variables_on_launch: true
+    ask_inventory_on_launch: false
+    ask_scm_branch_on_launch: false
+    ask_limit_on_launch: false
+    workflow_nodes:
+      - identifier: "Hello World Job"
+        unified_job_template: "Hello World"
+        success_nodes:
+          - "System Info Job"
+      - identifier: "System Info Job"
+        unified_job_template: "System Info"

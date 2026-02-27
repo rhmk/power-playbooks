@@ -1,0 +1,14 @@
+---
+# Sample organizations configuration for AAP Controller
+# This file defines organizations that will be created in the AAP Controller
+
+controller_organizations:
+  - name: "Demo Organization"
+    description: "Sample organization for demonstration purposes"
+    max_hosts: 100
+    custom_virtualenv: null
+
+  - name: "Production"
+    description: "Production organization for live workloads"
+    max_hosts: 500
+    custom_virtualenv: null

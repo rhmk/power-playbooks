@@ -1,0 +1,16 @@
+---
+# Sample teams configuration for AAP Controller
+# This file defines teams that will be created in the AAP Controller
+
+controller_teams:
+  - name: "Demo Team"
+    description: "Sample team for demonstration purposes"
+    organization: "Default"
+
+  - name: "Operations Team"
+    description: "Team responsible for operational tasks"
+    organization: "Default"
+
+  - name: "Development Team"
+    description: "Team responsible for development and testing"
+    organization: "Demo Organization"

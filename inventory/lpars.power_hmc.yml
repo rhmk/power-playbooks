@@ -13,8 +13,8 @@ plugin: ibm.power_hmc.powervm_inventory
 
 hmc_hosts:
   - hmc: ibm-power-hmc1.coe.muc.redhat.com
-    user: "{{ lookup('env', 'HMC_USER') | default('admin', true) }}"
-    password: "{{ lookup('env', 'HMC_PASS') }}"
+    user: "{{ hmc_username | default(lookup('env', 'HMC_USERNAME') | default('admin', true)) }}"
+    password: "{{ hmc_password | default(lookup('env', 'HMC_PASSWORD') | default('', true)) }}"
 
 # Include advanced fields from HMC (more LPAR properties)
 advanced_fields: true
