@@ -2,16 +2,21 @@
 # This playbook is meant to postconfigure an AAP installation on OpenShift
 #
 # Prerequisites:
-# - Install required collections: ansible-galaxy collection install -r common/requirements.yml
-# - OpenShift secret 'aap-manifest' containing the AAP license manifest
-# - AAP instance running on OpenShift with accessible route
+# - Install required collections: ansible-galaxy collection install -r requirements.yml
+# - AAP instance running and accessible
 #
-# CLI testing
-# oc login -u kubeadmin -p <password> https://api.cluster-qqw7r.qqw7r.sandbox598.opentlc.com:6443
-# ansible-playbook -e @ocp_credentials.yml aap_postinstall_manifest.yaml
+# Authentication:
+#   For SSO users (Red Hat SSO / Keycloak): generate a Personal Access Token in the
+#   AAP UI (User -> Tokens -> Add, scope: write) and pass it via aap_token.
 #
-#  ALternative set the K8S_AUTH_KUBECONFIG to the kubeconfig file with access rights to the cluster
-#  export K8S_AUTH_KUBECONFIG=/home/joe/.kube/config
+#   For local AAP users: pass aap_username + aap_password.
+#
+# Usage examples:
+#   # With OAuth2 token (SSO users):
+#   ansible-playbook aap_config.yml -e aap_hostname=aap.example.com -e aap_token=<token>
+#
+#   # With username/password (local users):
+#   ansible-playbook aap_config.yml -e aap_hostname=aap.example.com -e aap_username=admin -e aap_password=<pass>
 
 
 - name: AAP Post-Installation Configuration - configure AAP components
@@ -19,26 +24,29 @@
   connection: local
   gather_facts: false
   vars:
-    # aap_namespace: "aap"
-    # aap_app_name: 'example-aap'
-    aap_username: 'admin'
-    aap_password: ''
     controller_postinstall_dir: './aap_config'
     controller_postinstall_ignore_files: './aap_config/ignore_files'
-    automation_controller_hostname: ""
     aap_validate_certs: false
-    # aap_configuration_dispatcher_roles: {{ controller_configuration_dispatcher_roles }}
+
+    # OAuth2 token authentication (for SSO/external auth users)
+    aap_token: ""
+
+    # Username/password authentication (for local AAP users only)
+    aap_username: ""
+    aap_password: ""
+
+    aap_hostname: ""
 
   tasks:
-    - name: Assert that password and conttoller hostname are set
+    - name: Assert that authentication and hostname are configured
       ansible.builtin.assert:
         that:
-          - aap_password | length > 0
-          - automation_controller_hostname | length > 0
+          - aap_hostname | length > 0
+          - (aap_token | length > 0) or (aap_username | length > 0 and aap_password | length > 0)
         fail_msg: |
           Invalid configuration:
-          - aap_password must be set
-          - automation_controller_hostname must be set
+          - aap_hostname must be set
+          - Either aap_token (for SSO users) or aap_username + aap_password (for local users) must be provided
 
     - name: Include vars for automation controller
       ansible.builtin.include_vars:
@@ -49,6 +57,7 @@
         ignore_files: '{{ controller_postinstall_ignore_files }}'
         ignore_unknown_extensions: true
 
-    - name: Execute automation controller resource configuration
+
+    - name: Run AAP configuration dispatch role
       ansible.builtin.include_role:
         name: infra.aap_configuration.dispatch

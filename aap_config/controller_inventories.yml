@@ -19,8 +19,8 @@ controller_inventory_sources:
     inventory: "PowerVM Dynamic Inventory"
     organization: "sap"
     source: scm
-    source_project: "Power Playbooks"
-    source_path: "aap/powervm_inventory.yml"
+    source_project: "IBM Power"
+    source_path: "inventory/lpars.power_hmc.yml"
     credential: "HMC Credential"
     overwrite: true
     overwrite_vars: true
