@@ -22,6 +22,7 @@ controller_inventory_sources:
     source_project: "IBM Power"
     source_path: "inventory/lpars.power_hmc.yml"
     credential: "HMC Credential"
+    execution_environment: "SAP Dev"
     overwrite: true
     overwrite_vars: true
     update_on_launch: true
