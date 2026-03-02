@@ -3,15 +3,49 @@
 
 controller_inventories:
   - name: "IBM Power LPARs"
-    description: "Inventory that lists all LPARs"
+    description: "Static Inventory for IBM Power LPARs"
     organization: "sap"
     variables:
       ansible_connection: local
       ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
-  - name: "PowerVM Dynamic Inventory"
-    description: "Dynamic inventory sourced from HMC via ibm.power_hmc.powervm_inventory"
-    organization: "sap"
+controller_hosts:
+  - name: "mkoch01"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.241
+  - name: "mkoch02"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.242
+  - name: "mkoch03"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.243
+  - name: "mkoch04"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.244
+  - name: "mkoch05"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.245
+  - name: "mkoch06"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.246
+  - name: "mkoch07"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.247
+  - name: "mkoch08"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.248
+  - name: "mkoch09"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: 10.32.98.249
 
 controller_inventory_sources:
   - name: "HMC PowerVM Source"
