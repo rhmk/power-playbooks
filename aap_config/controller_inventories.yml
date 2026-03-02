@@ -5,10 +5,11 @@ controller_inventories:
   - name: "IBM Power LPARs"
     description: "Static Inventory for IBM Power LPARs"
     organization: "sap"
-    variables:
-      ansible_connection: local
-      ansible_python_interpreter: "{{ ansible_playbook_python }}"
-controller_host_groups:
+    #variables:
+    #  ansible_connection: local
+    #  ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+controller_groups:
   - name: "hmc"
     description: "HMC Server Group"
     organization: "sap"
@@ -27,7 +28,7 @@ controller_host_groups:
       ansible_connection: ssh
       ansible_user: ansible
     hosts:
-      - mkoch-powerkick       - sf1.coe.muc.redhat.com
+      - mkoch-powerkick
   - name: "bootp_servers"
     description: "Bootp Server Group"
     organization: "sap"
@@ -55,7 +56,7 @@ controller_hosts:
       netmask: "255.255.240.0"
       gateway: "10.32.96.1"
       domain_name: "power.coe.muc.redhat.com"
-  - name: "hmc1"
+  - name: "ibm-power-hmc1.coe.muc.redhat.com"
     inventory: "IBM Power LPARs"
     variables:
       ansible_host: "10.32.104.241"
@@ -63,7 +64,7 @@ controller_hosts:
       managed_systems_list:
         - "power91"
         - "power92"
-  - name: "hmc2"
+  - name: "ibm-power-hmc2.coe.muc.redhat.com"
     inventory: "IBM Power LPARs"
     variables:
       ansible_host: "10.32.104.242"

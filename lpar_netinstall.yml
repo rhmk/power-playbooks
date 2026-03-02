@@ -33,7 +33,7 @@
     managed_system: ""
     rhel_release: "9"             # e.g. 9, 9.6, 10
     hostname: ""                  # defaults to lpar_name
-    lpar_host_ip: ""              # gewünschte IP-Adresse
+    lpar_host_ip: ""               # gewünschte IP-Adresse
     nextserver_ip: "{{ hostvars[groups['kickstart_servers'] | first].ansible_host | default('10.32.98.240') }}"
     server_type: "not defined"    # Freitext für ks-power.cfg.j2
     virtual_network: "VLAN1-ETHERNET0"
@@ -112,7 +112,7 @@
 
     - name: Set path for Kea snippet temp file
       ansible.builtin.set_fact:
-        kea_snippet_tmp_path: "{{ lookup('env', 'TMPDIR') | default('/tmp') }}/kea-snippet-{{ lpar_name }}.conf"
+        kea_snippet_tmp_path: "/tmp/kea-snippet-{{ lpar_name }}.conf"
 
     - name: Render Kea reservation snippet to temp file on controller
       ansible.builtin.template:
