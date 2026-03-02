@@ -118,6 +118,10 @@ powerpc-utils
 powerpc-utils-core
 ppc64-diag
 librtas
+ksh
+perl-File-Copy
+perl-autouse
+perl-lib
 
 # Virtualization support (for LPARs)
 qemu-guest-agent
@@ -237,6 +241,16 @@ if ! grep -q "console=hvc0" /etc/default/grub; then
     sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="console=hvc0 /' /etc/default/grub
     grub2-mkconfig -o /boot/grub2/grub.cfg
 fi
+
+# =============================================================================
+# IBM Power Tools (RSCT / Service Agents)
+# =============================================================================
+
+dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ rhel_major_version }}.noarch.rpm
+dnf install -y https://public.dhe.ibm.com/software/server/POWER/Linux/yum/download/ibm-power-repo-latest.noarch.rpm
+sed -i 's/less/cat/g' /opt/ibm/lop/configure
+/usr/bin/yes | /opt/ibm/lop/configure
+dnf install --disablerepo=Advance_Toolchain" rsct.basic rsct.core rsct.core.utils
 
 # =============================================================================
 # Cleanup
