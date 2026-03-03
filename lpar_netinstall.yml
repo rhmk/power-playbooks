@@ -173,6 +173,7 @@
 - name: Deploy MAC-specific GRUB config and kickstart file on kickstart server
   hosts: kickstart_servers
   gather_facts: true
+
   vars:
     lpar_name: "{{ hostvars['localhost'].lpar_name }}"
     managed_system: "{{ hostvars['localhost'].managed_system }}"
@@ -207,12 +208,16 @@
         mode: "0644"
       vars:
         kickstart_ks_path: "ks/ks-power-{{ lpar_name }}.cfg"
+      become: true
+      become_user: root
 
     - name: Deploy LPAR-specific kickstart file to webserver
       ansible.builtin.template:
         src: templates/ks-power.cfg.j2
         dest: "{{ kickstart_base_dir }}/ks/ks-power-{{ lpar_name }}.cfg"
         mode: "0644"
+      become: true
+      become_user: root
 
 # =============================================================================
 # PLAY 3: LPAR von HMC aus netboot starten
