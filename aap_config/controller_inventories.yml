@@ -18,8 +18,8 @@ controller_groups:
       ansible_connection: ssh
       ansible_user: admin
     hosts:
-      - hmc1
-      - hmc2
+      - ibm-power-hmc1.coe.muc.redhat.com
+      - ibm-power-hmc2.coe.muc.redhat.com
   - name: "kickstart_servers"
     description: "Kickstart Server Group"
     organization: "sap"

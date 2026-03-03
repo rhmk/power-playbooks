@@ -60,12 +60,12 @@ rootpw --iscrypted {{ ks_root_password | default('changeme') | password_hash('sh
 # Create Admin User
 user --name=admin --password={{ ks_admin_password | default(ks_root_password|default('changeme')) | password_hash('sha512') }} --iscrypted --shell=/bin/bash --groups=wheel --homedir=/home/admin --gecos="Admin User"
 {% if ks_ssh_pubkey is defined and ks_ssh_pubkey %}
-sshkey --username=admin {{ ks_ssh_pubkey }}
+sshkey --username=admin "{{ ks_ssh_pubkey }}"
 {% endif %}
 
 # Root SSH public key: set ks_ssh_pubkey to add a key to /root/.ssh/authorized_keys (in %post)
 {% if ks_ssh_pubkey is defined and ks_ssh_pubkey %}
-sshkey --username=root {{ ks_ssh_pubkey }}
+sshkey --username=root "{{ ks_ssh_pubkey }}"
 {% endif %}
 
 # Disable firewall during install (enable post-install)

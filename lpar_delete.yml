@@ -14,8 +14,8 @@
 #     -e "lpar_name=my_lpar" -e "managed_system=power91" \
 #     -e "hmc_pass=PASSWORD" -e "confirm_delete=yes"
 
-- name: Delete LPAR
-  hosts: hmc
+- name: Delet LPAR
+  hosts: localhost
   connection: local
   gather_facts: false
 
@@ -32,6 +32,26 @@
     _managed_system: "{{ managed_system | default(managed_systems_list[0]) }}"
 
   tasks:
+    - name: Check reachability of each HMC host (SSH port 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].ansible_host | default(item) }}"
+        port: 22
+        timeout: 3
+      loop: "{{ groups['hmc'] }}"
+      register: hmc_reach_result
+      ignore_errors: true
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Set first reachable HMC host (hmc_host and reachable_hmc_host)
+      ansible.builtin.set_fact:
+        hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+
+    - name: Fail if no HMC host is reachable
+      ansible.builtin.fail:
+        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
+      when: hmc_host | length == 0
+
     - name: Validate required variables
       ansible.builtin.assert:
         that:

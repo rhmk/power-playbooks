@@ -1,0 +1,61 @@
+{
+    "name": "JT1",
+    "description": "JT1",
+    "spec": [
+    {
+      "question_description": "Select Power Server to create LPAR on",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "managed_system",
+      "choices": "power91\npower92",
+      "default": "power91",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_description": "Select LPAR Name",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "lpar_name",
+      "choices": "mkoch01\nmkoch02\nmkoch03\nmkoch04\nmkoch05\nmkoch06\nmkoch07\nmkoch08\nmkoch09",
+      "default": "",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_description": "Boot Disk Size",
+      "required": true,
+      "type": "integer",
+      "variable": "lpar_disk",
+      "choices": "30\n40\n50\n60\n70\n80\n90\n100",
+      "default": 50,
+      "max": 1024,
+      "min": 30,
+      "new_question": false
+    },
+    {
+      "question_description": "Number of CPUs",
+      "required": true,
+      "type": "integer",
+      "variable": "lpar_cpu",
+      "choices": "2\n4\n6\n8\n10\n12",
+      "default": 4,
+      "max": 12,
+      "min": 2,
+      "new_question": true
+    },
+    {
+      "question_description": "Memory in MB",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "lpar_mem",
+      "choices": "2048\n4096\n8192\n16384\n32768\n65536\n131072",
+      "default": 8192,
+      "max": 131072,
+      "min": 2048,
+      "new_question": true
+    }
+  ]
+}
