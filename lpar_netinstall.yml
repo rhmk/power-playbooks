@@ -20,6 +20,37 @@
 # Prerequisites: LPAR bereits mit lpar_create.yml erzeugt (mit Netzwerk).
 
 # =============================================================================
+# PLAY 0: Prüfen, welcher HMC-Host erreichbar ist (hmc_host für alle folgenden Plays)
+# =============================================================================
+
+- name: Find first reachable HMC host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Check reachability of each HMC host (SSH port 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].ansible_host | default(item) }}"
+        port: 22
+        timeout: 3
+      loop: "{{ groups['hmc'] }}"
+      register: hmc_reach_result
+      ignore_errors: true
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Set first reachable HMC host (hmc_host and reachable_hmc_host)
+      ansible.builtin.set_fact:
+        reachable_hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+        hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+
+    - name: Fail if no HMC host is reachable
+      ansible.builtin.fail:
+        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
+      when: hmc_host | length == 0
+
+# =============================================================================
 # PLAY 1: MAC von LPAR holen, Kea-Reservation auf bootp_server anlegen
 # =============================================================================
 
@@ -41,7 +72,7 @@
     kea_main_config: "/etc/kea/kea-dhcp4.conf"
     kea_service_name: "kea-dhcp4"   # or kea-dhcp4-server on some systems
     dhcp_domain_name: "{{ hostvars[groups['bootp_servers'] | first].domain_name | default('coe.muc.redhat.com') }}"
-    hmc_host: "{{ groups['hmc'] | first | default('') }}"
+    hmc_host: "{{ hostvars['localhost'].hmc_host }}"
     hmc_username: "hscroot"
     hmc_password: ""
 
@@ -220,41 +251,11 @@
       become_user: root
 
 # =============================================================================
-# PLAY 3a: Prüfen, welcher HMC-Host erreichbar ist (nur einer wird verwendet)
-# =============================================================================
-
-- name: Find first reachable HMC host
-  hosts: localhost
-  connection: local
-  gather_facts: false
-
-  tasks:
-    - name: Check reachability of each HMC host (SSH port 22)
-      ansible.builtin.wait_for:
-        host: "{{ hostvars[item].ansible_host | default(item) }}"
-        port: 22
-        timeout: 3
-      loop: "{{ groups['hmc'] }}"
-      register: hmc_reach_result
-      ignore_errors: true
-      loop_control:
-        label: "{{ item }}"
-
-    - name: Set first reachable HMC host for netboot
-      ansible.builtin.set_fact:
-        reachable_hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
-
-    - name: Fail if no HMC host is reachable
-      ansible.builtin.fail:
-        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
-      when: reachable_hmc_host | length == 0
-
-# =============================================================================
-# PLAY 3b: LPAR von HMC aus netboot starten (nur auf dem erreichbaren HMC)
+# PLAY 3: LPAR von HMC aus netboot starten (nur auf dem erreichbaren HMC)
 # =============================================================================
 
 - name: Boot LPAR from HMC (lpar_netboot)
-  hosts: "{{ hostvars['localhost'].reachable_hmc_host }}"
+  hosts: "{{ hostvars['localhost'].hmc_host }}"
   gather_facts: false
   vars:
     lpar_name: "{{ hostvars['localhost'].lpar_name }}"
