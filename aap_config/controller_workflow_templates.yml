@@ -1,0 +1,47 @@
+---
+# Sample workflow job template configuration for AAP Controller
+# This file defines workflow job templates that will be created in the AAP Controller
+
+controller_workflows:
+  - name: "SAP WT01 - Create LPAR and Install OS"
+    description: "Workflow to create a new LPAR and install OS"
+    organization: "sap"
+    inventory: IBM Power LPARs
+    allow_simultaneous: false
+    destroy_current_nodes: true # Create from scratch
+    survey_enabled: true
+    survey_specification: "{{ lookup('template', 'aap_config/survey/survey_WT1.json')|regex_replace('\\n', '') }}"
+    label: power
+    extra_vars:
+      vios_name: !unsafe '{{ managed_system }}-vios'
+      vios_volume_group: datavg
+      virtual_network: VLAN1-ETHERNET0
+    workflow_nodes:
+      - identifier: "SAP JT04 - LPAR Info"
+        unified_job_template:
+          name: "SAP JT04 - LPAR Info"
+          type: job_template
+        related:
+          success_nodes: []
+          failure_nodes:
+            - identifier: "SAP JT01 - LPAR Create"
+          always_nodes: []
+      - identifier: "SAP JT01 - LPAR Create"
+        unified_job_template:
+          name: "SAP JT01 - LPAR Create"
+          type: job_template
+        related:
+          success_nodes:
+            - identifier: "SAP JT02 - LPAR Install"
+          failure_nodes: []
+          always_nodes: []
+          credentials: []
+      - identifier: "SAP JT02 - LPAR Install"
+        unified_job_template:
+          name: "SAP JT02 - LPAR Install"
+          type: job_template
+        related:
+          success_nodes: []
+          failure_nodes: []
+          always_nodes: []
+          credentials: []
