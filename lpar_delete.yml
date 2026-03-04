@@ -73,7 +73,7 @@
 
     - name: Shutdown LPAR if running
       ibm.power_hmc.powervm_lpar_instance:
-        hmc_host: "{{ inventory_hostname }}"
+        hmc_host: "{{ hmc_host }}"
         hmc_auth:
           username: "{{ hmc_username }}"
           password: "{{ hmc_password }}"
@@ -95,7 +95,7 @@
 
     - name: Delete LPAR
       ibm.power_hmc.powervm_lpar_instance:
-        hmc_host: "{{ inventory_hostname }}"
+        hmc_host: "{{ hmc_host }}"
         hmc_auth:
           username: "{{ hmc_username }}"
           password: "{{ hmc_password }}"
