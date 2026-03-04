@@ -272,7 +272,8 @@ dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ rhel
 dnf install -y https://public.dhe.ibm.com/software/server/POWER/Linux/yum/download/ibm-power-repo-latest.noarch.rpm
 sed -i 's/less/cat/g' /opt/ibm/lop/configure
 /usr/bin/yes | /opt/ibm/lop/configure
-dnf install --disablerepo=Advance_Toolchain rsct.basic rsct.core rsct.core.utils
+dnf install -y --disablerepo=Advance_Toolchain rsct.basic rsct.core rsct.core.utils
+# firewall-offline-cmd --add-service=rsct-ctrmc
 
 # =============================================================================
 # Cleanup

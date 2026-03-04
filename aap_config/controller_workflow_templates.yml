@@ -10,7 +10,7 @@ controller_workflows:
     allow_simultaneous: false
     destroy_current_nodes: true # Create from scratch
     survey_enabled: true
-    survey_specification: "{{ lookup('template', 'aap_config/survey/survey_WT1.json')|regex_replace('\\n', '') }}"
+    survey: "{{ lookup('template', 'aap_config/survey/survey_WT1.json')|regex_replace('\\n', '') }}"
     label: power
     extra_vars:
       vios_name: !unsafe '{{ managed_system }}-vios'
