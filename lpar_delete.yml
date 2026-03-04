@@ -61,11 +61,11 @@
         fail_msg: |
           Provide: lpar_name, hmc_password, and _managed_system (or set in inventory).
 
-    - naem: Debug HMC Credentials
+    - name: Debug HMC Credentials
       ansible.builtin.debug:
         msg: "HMC Credentials: {{ hmc_username }}:{{ hmc_password }}"
         verbosity: 2
-        
+
     - name: Confirm LPAR deletion
       ansible.builtin.fail:
         msg: "LPAR '{{ lpar_name }}' on {{ _managed_system }} will be deleted. Set -e confirm_delete=yes to proceed."
