@@ -16,6 +16,7 @@ controller_templates:
   survey_enabled: true
   survey: "{{ lookup('template', 'aap_config/survey/survey_JT3.json')|regex_replace('\\n', '') }}"
   timeout: 0
+  label: power
   ask_credential_on_launch: false
   ask_diff_mode_on_launch: false
   ask_execution_environment_on_launch: false
