@@ -26,8 +26,8 @@
   vars:
     lpar_name: ""
     managed_system: ""  # If empty, must be set per host or via managed_systems_list
-    hmc_username: "{{ hmc_user | default('hscroot') }}"
-    hmc_password: "{{ hmc_pass | default('') }}"
+    hmc_username: "{{ hmc_username | default('hscroot') }}"
+    hmc_password: "{{ hmc_password | default('') }}"
     confirm_delete: false  # Set to true to skip confirmation prompt
     _managed_system: "{{ managed_system | default(managed_systems_list[0]) }}"
 
@@ -59,8 +59,13 @@
           - lpar_name | length > 0
           - _managed_system | length > 0
         fail_msg: |
-          Provide: lpar_name, hmc_pass, and managed_system (or set in inventory).
+          Provide: lpar_name, hmc_password, and _managed_system (or set in inventory).
 
+    - naem: Debug HMC Credentials
+      ansible.builtin.debug:
+        msg: "HMC Credentials: {{ hmc_username }}:{{ hmc_password }}"
+        verbosity: 2
+        
     - name: Confirm LPAR deletion
       ansible.builtin.fail:
         msg: "LPAR '{{ lpar_name }}' on {{ _managed_system }} will be deleted. Set -e confirm_delete=yes to proceed."
