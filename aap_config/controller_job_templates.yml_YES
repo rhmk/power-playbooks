@@ -1,0 +1,110 @@
+---
+controller_templates:
+- name: SAP JT01 - LPAR Create
+  ask_credential_on_launch: false
+  ask_diff_mode_on_launch: false
+  ask_execution_environment_on_launch: false
+  ask_instance_groups_on_launch: false
+  ask_inventory_on_launch: false
+  ask_job_type_on_launch: false
+  ask_limit_on_launch: false
+  ask_scm_branch_on_launch: false
+  ask_skip_tags_on_launch: false
+  ask_tags_on_launch: false
+  ask_variables_on_launch: false
+  ask_verbosity_on_launch: true
+  become_enabled: false
+  concurrent_jobs_enabled: false
+  credentials:
+  - HMC Credential
+  - Manage IBM LPAR servers
+  description: Creates a Linux/AIX LPAR on a power system (no OS Installation)
+  diff_mode: false
+  execution_environment: SAP Dev
+  extra_vars:
+    vios_name: !unsafe '{{ managed_system }}-vios'
+    vios_volume_group: datavg
+    virtual_network: VLAN1-ETHERNET0
+  forks: 0
+  instance_groups: []
+  inventory: IBM Power LPARs
+  job_tags: ''
+  job_type: run
+  limit: ''
+  organization: sap
+  playbook: lpar_create.yml
+  project: IBM Power
+  skip_tags: ''
+  survey_enabled: true
+  survey: "{{ lookup('template', 'survey/survey_JT1.json')|regex_replace('\\n', '') }}"
+  timeout: 0
+  verbosity: 0
+- name: SAP JT02 - LPAR Install
+  ask_credential_on_launch: false
+  ask_diff_mode_on_launch: false
+  ask_execution_environment_on_launch: false
+  ask_instance_groups_on_launch: false
+  ask_inventory_on_launch: false
+  ask_job_type_on_launch: false
+  ask_limit_on_launch: false
+  ask_scm_branch_on_launch: false
+  ask_skip_tags_on_launch: false
+  ask_tags_on_launch: false
+  ask_variables_on_launch: false
+  ask_verbosity_on_launch: true
+  become_enabled: false
+  concurrent_jobs_enabled: false
+  credentials:
+  - HMC Credential
+  - Manage IBM LPAR servers
+  description: Installs an LPAR via netboot
+  diff_mode: false
+  execution_environment: SAP Dev
+  extra_vars:
+    lpar_host_ip: !unsafe '{{ hostvars[lpar_name].ansible_host }}'
+    vios_name: !unsafe '{{ managed_system }}-vios'
+    vios_volume_group: datavg
+    virtual_network: VLAN1-ETHERNET0
+  forks: 0
+  instance_groups: []
+  inventory: IBM Power LPARs
+  job_tags: ''
+  job_type: run
+  limit: ''
+  organization: sap
+  playbook: lpar_netinstall.yml
+  project: IBM Power
+  skip_tags: ''
+  survey_enabled: true
+  survey: "{{ lookup('template', 'survey/survey_JT2.json')|regex_replace('\\n', '') }}"
+  timeout: 0
+  verbosity: 0
+- name: SAP JT03 - LPAR Delete
+  ask_credential_on_launch: false
+  ask_diff_mode_on_launch: false
+  ask_execution_environment_on_launch: false
+  ask_instance_groups_on_launch: false
+  ask_inventory_on_launch: false
+  ask_job_type_on_launch: false
+  ask_limit_on_launch: false
+  ask_scm_branch_on_launch: false
+  ask_skip_tags_on_launch: false
+  ask_tags_on_launch: false
+  ask_variables_on_launch: false
+  ask_verbosity_on_launch: true
+  become_enabled: false
+  concurrent_jobs_enabled: false
+  credentials:
+  - HMC Credential
+  - Manage IBM LPAR servers
+  description: Deletes an LPAR and cleans up DHCP and kickstart files
+  diff_mode: false
+  execution_environment: SAP Dev
+  extra_vars:
+    confirm_delete: true
+  forks: 0
+  instance_groups: []
+  inventory: IBM Power LPARs
+  survey: lookup('template', 'survey/survey_JT3.json')|regex_replace('\\n', '')
+  timeout: 0
+  verbosity: 0

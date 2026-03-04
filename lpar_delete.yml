@@ -14,8 +14,8 @@
 #     -e "lpar_name=my_lpar" -e "managed_system=power91" \
 #     -e "hmc_pass=PASSWORD" -e "confirm_delete=yes"
 
-- name: Delete LPAR
-  hosts: hmc
+- name: Delet LPAR
+  hosts: localhost
   connection: local
   gather_facts: false
 
@@ -26,12 +26,32 @@
   vars:
     lpar_name: ""
     managed_system: ""  # If empty, must be set per host or via managed_systems_list
-    hmc_username: "{{ hmc_user | default('hscroot') }}"
-    hmc_password: "{{ hmc_pass | default('') }}"
+    hmc_username: "{{ hmc_username | default('hscroot') }}"
+    hmc_password: "{{ hmc_password | default('') }}"
     confirm_delete: false  # Set to true to skip confirmation prompt
     _managed_system: "{{ managed_system | default(managed_systems_list[0]) }}"
 
   tasks:
+    - name: Check reachability of each HMC host (SSH port 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].ansible_host | default(item) }}"
+        port: 22
+        timeout: 3
+      loop: "{{ groups['hmc'] }}"
+      register: hmc_reach_result
+      ignore_errors: true
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Set first reachable HMC host (hmc_host and reachable_hmc_host)
+      ansible.builtin.set_fact:
+        hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+
+    - name: Fail if no HMC host is reachable
+      ansible.builtin.fail:
+        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
+      when: hmc_host | length == 0
+
     - name: Validate required variables
       ansible.builtin.assert:
         that:
@@ -39,7 +59,12 @@
           - lpar_name | length > 0
           - _managed_system | length > 0
         fail_msg: |
-          Provide: lpar_name, hmc_pass, and managed_system (or set in inventory).
+          Provide: lpar_name, hmc_password, and _managed_system (or set in inventory).
+
+    - name: Debug HMC Credentials
+      ansible.builtin.debug:
+        msg: "HMC Credentials: {{ hmc_username }}:{{ hmc_password }}"
+        verbosity: 2
 
     - name: Confirm LPAR deletion
       ansible.builtin.fail:
@@ -48,7 +73,7 @@
 
     - name: Shutdown LPAR if running
       ibm.power_hmc.powervm_lpar_instance:
-        hmc_host: "{{ inventory_hostname }}"
+        hmc_host: "{{ hmc_host }}"
         hmc_auth:
           username: "{{ hmc_username }}"
           password: "{{ hmc_password }}"
@@ -70,7 +95,7 @@
 
     - name: Delete LPAR
       ibm.power_hmc.powervm_lpar_instance:
-        hmc_host: "{{ inventory_hostname }}"
+        hmc_host: "{{ hmc_host }}"
         hmc_auth:
           username: "{{ hmc_username }}"
           password: "{{ hmc_password }}"

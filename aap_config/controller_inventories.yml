@@ -5,11 +5,73 @@ controller_inventories:
   - name: "IBM Power LPARs"
     description: "Static Inventory for IBM Power LPARs"
     organization: "sap"
+    #variables:
+    #  ansible_connection: local
+    #  ansible_python_interpreter: "{{ ansible_playbook_python }}"
+
+controller_groups:
+  - name: "hmc"
+    description: "HMC Server Group"
+    organization: "sap"
+    inventory: "IBM Power LPARs"
     variables:
-      ansible_connection: local
-      ansible_python_interpreter: "{{ ansible_playbook_python }}"
+      ansible_connection: ssh
+      ansible_user: admin
+    hosts:
+      - ibm-power-hmc1.coe.muc.redhat.com
+      - ibm-power-hmc2.coe.muc.redhat.com
+  - name: "kickstart_servers"
+    description: "Kickstart Server Group"
+    organization: "sap"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_connection: ssh
+      ansible_user: ansible
+    hosts:
+      - mkoch-powerkick
+  - name: "bootp_servers"
+    description: "Bootp Server Group"
+    organization: "sap"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_connection: ssh
+      ansible_user: root
+    hosts:
+      - sf1.coe.muc.redhat.com
 
 controller_hosts:
+  - name: "mkoch-powerkick"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: "10.32.98.240"
+      dns_server1: "10.32.96.1"
+      dns_server2: "10.32.96.31"
+      domain_name: "power.coe.muc.redhat.com"
+  - name: "sf1.coe.muc.redhat.com"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: "10.32.96.61"
+      dns_server1: "10.32.96.1"
+      dns_server2: "10.32.96.31"
+      netmask: "255.255.240.0"
+      gateway: "10.32.96.1"
+      domain_name: "power.coe.muc.redhat.com"
+  - name: "ibm-power-hmc1.coe.muc.redhat.com"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: "10.32.104.241"
+      ansible_user: "admin"
+      managed_systems_list:
+        - "power91"
+        - "power92"
+  - name: "ibm-power-hmc2.coe.muc.redhat.com"
+    inventory: "IBM Power LPARs"
+    variables:
+      ansible_host: "10.32.104.242"
+      ansible_user: "admin"
+      managed_systems_list:
+        - "power91"
+        - "power92"
   - name: "mkoch01"
     inventory: "IBM Power LPARs"
     variables:
@@ -46,6 +108,8 @@ controller_hosts:
     inventory: "IBM Power LPARs"
     variables:
       ansible_host: 10.32.98.249
+
+
 
 controller_inventory_sources:
   - name: "HMC PowerVM Source"

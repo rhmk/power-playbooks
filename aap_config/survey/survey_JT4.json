@@ -1,0 +1,28 @@
+{
+    "name": "JT4",
+    "description": "JT4",
+    "spec": [
+    {
+      "question_name": "Select LPAR Name",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "lpar_name",
+      "choices": "mkoch01\nmkoch02\nmkoch03\nmkoch04\nmkoch05\nmkoch06\nmkoch07\nmkoch08\nmkoch09",
+      "default": "",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_name": "Select Managed System",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "managed_system",
+      "choices": "power91\npower92",
+      "default": "power91",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    }
+  ]
+}

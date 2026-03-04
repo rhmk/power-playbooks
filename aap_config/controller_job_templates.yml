@@ -1,0 +1,67 @@
+---
+controller_templates:
+- name: SAP JT03 - LPAR Delete
+  description: Deletes an LPAR and cleans up DHCP and kickstart files
+  job_type: run
+  inventory: IBM Power LPARs
+  project: IBM Power
+  playbook: lpar_delete.yml
+  credentials:
+  - HMC Credential
+  - Manage IBM LPAR servers
+  execution_environment: SAP Dev
+  extra_vars:
+    confirm_delete: true
+  forks: 0
+  survey_enabled: true
+  survey: "{{ lookup('template', 'aap_config/survey/survey_JT3.json')|regex_replace('\\n', '') }}"
+  timeout: 0
+  label: power
+  ask_credential_on_launch: false
+  ask_diff_mode_on_launch: false
+  ask_execution_environment_on_launch: false
+  ask_instance_groups_on_launch: false
+  ask_inventory_on_launch: false
+  ask_job_type_on_launch: false
+  ask_limit_on_launch: false
+  ask_scm_branch_on_launch: false
+  ask_skip_tags_on_launch: false
+  ask_tags_on_launch: false
+  ask_variables_on_launch: false
+  ask_verbosity_on_launch: true
+  become_enabled: false
+  concurrent_jobs_enabled: false
+  verbosity: 0
+
+- name: SAP JT04 - LPAR Info
+  description: Gets information about an LPAR
+  job_type: run
+  inventory: IBM Power LPARs
+  project: IBM Power
+  playbook: lpar_info.yml
+  credentials:
+  - HMC Credential
+  - Manage IBM LPAR servers
+  execution_environment: SAP Dev
+  extra_vars:
+    lpar_name: ""
+    managed_system: ""
+  survey_enabled: true
+  survey: "{{ lookup('template', 'aap_config/survey/survey_JT4.json')|regex_replace('\\n', '') }}"
+  timeout: 0
+  label: power
+  ask_credential_on_launch: false
+  ask_diff_mode_on_launch: false
+  ask_execution_environment_on_launch: false
+  ask_instance_groups_on_launch: false
+  ask_inventory_on_launch: false
+  ask_job_type_on_launch: false
+  ask_limit_on_launch: false
+  ask_scm_branch_on_launch: false
+  ask_skip_tags_on_launch: false
+  ask_tags_on_launch: false
+  ask_variables_on_launch: false
+  ask_verbosity_on_launch: true
+  become_enabled: false
+  concurrent_jobs_enabled: false
+  verbosity: 0

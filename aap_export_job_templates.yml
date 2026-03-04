@@ -1,0 +1,205 @@
+---
+# Export Job Templates (incl. survey) from AAP Controller
+#
+# Produces YAML output compatible with infra.aap_configuration.controller_job_templates
+#
+# Usage:
+#   # Export ALL job templates:
+#   ansible-playbook aap_export_job_templates.yml \
+#     -e aap_hostname=aap.example.com -e aap_token=<token>
+#
+#   # Export a single job template by exact name:
+#   ansible-playbook aap_export_job_templates.yml \
+#     -e aap_hostname=aap.example.com -e aap_token=<token> \
+#     -e 'export_filter_name=My Job Template'
+#
+#   # Export all job templates starting with "SAP":
+#   ansible-playbook aap_export_job_templates.yml \
+#     -e aap_hostname=aap.example.com -e aap_token=<token> \
+#     -e export_filter_startswith=SAP
+#
+#   # Export all job templates containing "LPAR" (case-insensitive):
+#   ansible-playbook aap_export_job_templates.yml \
+#     -e aap_hostname=aap.example.com -e aap_token=<token> \
+#     -e export_filter_contains=LPAR
+#
+#   # Write output to file instead of stdout:
+#   ansible-playbook aap_export_job_templates.yml \
+#     -e aap_hostname=aap.example.com -e aap_token=<token> \
+#     -e export_output_file=aap_config/controller_job_templates.yml
+
+- name: Export Job Templates from AAP Controller
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    aap_hostname: ""
+    aap_validate_certs: false
+    aap_token: ""
+    aap_username: ""
+    aap_password: ""
+    export_filter_name: ""
+    export_filter_startswith: ""
+    export_filter_contains: ""
+    export_output_file: ""
+    # AAP 2.5+ (gateway): /api/controller/v2
+    # AAP 2.4 (standalone controller): /api/v2
+    aap_api_base: "/api/controller/v2"
+    _base_url: "https://{{ aap_hostname }}{{ aap_api_base }}"
+
+  tasks:
+    - name: Validate input
+      ansible.builtin.assert:
+        that:
+          - aap_hostname | length > 0
+          - (aap_token | length > 0) or (aap_username | length > 0 and aap_password | length > 0)
+        fail_msg: "Set aap_hostname and either aap_token or aap_username+aap_password"
+
+    - name: Set auth header (token)
+      when: aap_token | length > 0
+      ansible.builtin.set_fact:
+        _auth_header:
+          Authorization: "Bearer {{ aap_token }}"
+        _force_basic_auth: false
+        _url_username: ""
+        _url_password: ""
+
+    - name: Set auth header (basic)
+      when: aap_token | length == 0
+      ansible.builtin.set_fact:
+        _auth_header: {}
+        _force_basic_auth: true
+        _url_username: "{{ aap_username }}"
+        _url_password: "{{ aap_password }}"
+
+    - name: Build API URL for job templates
+      vars:
+        _filters: >-
+          {{
+            (('&name=' + (export_filter_name | urlencode)) if export_filter_name | length > 0 else '')
+            + (('&name__istartswith=' + (export_filter_startswith | urlencode)) if export_filter_startswith | length > 0 else '')
+            + (('&name__icontains=' + (export_filter_contains | urlencode)) if export_filter_contains | length > 0 else '')
+          }}
+      ansible.builtin.set_fact:
+        _jt_url: "{{ _base_url }}/job_templates/?page_size=200{{ _filters }}"
+
+    - name: Fetch job templates from API
+      ansible.builtin.uri:
+        url: "{{ _jt_url }}"
+        method: GET
+        headers: "{{ _auth_header }}"
+        url_username: "{{ _url_username | default(omit) }}"
+        url_password: "{{ _url_password | default(omit) }}"
+        force_basic_auth: "{{ _force_basic_auth | default(false) }}"
+        validate_certs: "{{ aap_validate_certs }}"
+        return_content: true
+      register: _jt_response
+
+    - name: Fetch survey spec for each template with survey enabled
+      ansible.builtin.uri:
+        url: "{{ _base_url }}/job_templates/{{ item.id }}/survey_spec/"
+        method: GET
+        headers: "{{ _auth_header }}"
+        url_username: "{{ _url_username | default(omit) }}"
+        url_password: "{{ _url_password | default(omit) }}"
+        force_basic_auth: "{{ _force_basic_auth | default(false) }}"
+        validate_certs: "{{ aap_validate_certs }}"
+        return_content: true
+      register: _survey_results
+      loop: "{{ _jt_response.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+      when: item.survey_enabled | default(false)
+
+    - name: Build survey lookup dict
+      ansible.builtin.set_fact:
+        _survey_lookup: >-
+          {{
+            _survey_lookup | default({}) | combine({
+              item.item.id | string: item.json
+            })
+          }}
+      loop: "{{ _survey_results.results | default([]) }}"
+      loop_control:
+        label: "{{ item.item.name | default('skip') }}"
+      when: item.skipped is not defined
+
+    - name: Transform job templates to controller_job_templates format
+      ansible.builtin.set_fact:
+        _exported_templates: "{{ _exported_templates | default([]) + [_entry] }}"
+      vars:
+        _survey_raw: "{{ _survey_lookup[item.id | string] | default({}) }}"
+        _survey_spec: >-
+          {{
+            (_survey_raw.spec | default([]))
+            | map('dict2items')
+            | map('rejectattr', 'key', 'equalto', 'id')
+            | map('items2dict')
+            | list
+          }}
+        _entry: >-
+          {{
+            {
+              'name': item.name,
+              'description': item.description | default(''),
+              'organization': item.summary_fields.organization.name | default('Default'),
+              'project': item.summary_fields.project.name | default(omit),
+              'playbook': item.playbook | default(''),
+              'inventory': item.summary_fields.inventory.name | default(omit),
+              'job_type': item.job_type | default('run'),
+              'credentials': item.summary_fields.credentials | default([]) | map(attribute='name') | list,
+              'execution_environment': item.summary_fields.execution_environment.name | default(omit),
+              'instance_groups': item.summary_fields.instance_groups | default([]) | map(attribute='name') | list,
+              'concurrent_jobs_enabled': item.allow_simultaneous | default(false),
+              'ask_scm_branch_on_launch': item.ask_scm_branch_on_launch | default(false),
+              'ask_diff_mode_on_launch': item.ask_diff_mode_on_launch | default(false),
+              'ask_variables_on_launch': item.ask_variables_on_launch | default(false),
+              'ask_limit_on_launch': item.ask_limit_on_launch | default(false),
+              'ask_tags_on_launch': item.ask_tags_on_launch | default(false),
+              'ask_skip_tags_on_launch': item.ask_skip_tags_on_launch | default(false),
+              'ask_job_type_on_launch': item.ask_job_type_on_launch | default(false),
+              'ask_verbosity_on_launch': item.ask_verbosity_on_launch | default(false),
+              'ask_inventory_on_launch': item.ask_inventory_on_launch | default(false),
+              'ask_credential_on_launch': item.ask_credential_on_launch | default(false),
+              'ask_execution_environment_on_launch': item.ask_execution_environment_on_launch | default(false),
+              'ask_instance_groups_on_launch': item.ask_instance_groups_on_launch | default(false),
+              'survey_enabled': item.survey_enabled | default(false),
+              'become_enabled': item.become_enabled | default(false),
+              'diff_mode': item.diff_mode | default(false),
+              'forks': item.forks | default(0),
+              'limit': item.limit | default(''),
+              'job_tags': item.job_tags | default(''),
+              'skip_tags': item.skip_tags | default(''),
+              'timeout': item.timeout | default(0),
+              'verbosity': item.verbosity | default(0),
+              'extra_vars': item.extra_vars | default('') | from_yaml | default({}),
+            }
+            | combine(
+                {'survey_spec': _survey_spec} if (_survey_spec | length > 0) else {}
+              )
+          }}
+      loop: "{{ _jt_response.json.results }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Build final output
+      ansible.builtin.set_fact:
+        _output: "{{ {'controller_job_templates': _exported_templates | default([])} }}"
+
+    - name: Write to file
+      when: export_output_file | length > 0
+      ansible.builtin.copy:
+        content: "---\n{{ _output | to_nice_yaml(indent=2) }}"
+        dest: "{{ export_output_file }}"
+        mode: "0644"
+
+    - name: Show exported YAML on stdout
+      when: export_output_file | length == 0
+      ansible.builtin.debug:
+        msg: "{{ '---\n' + (_output | to_nice_yaml(indent=2)) }}"
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: >-
+          Exported {{ _exported_templates | default([]) | length }} job template(s)
+          {{ ('to ' + export_output_file) if export_output_file | length > 0 else '(stdout)' }}

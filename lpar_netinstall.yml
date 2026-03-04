@@ -20,6 +20,37 @@
 # Prerequisites: LPAR bereits mit lpar_create.yml erzeugt (mit Netzwerk).
 
 # =============================================================================
+# PLAY 0: Prüfen, welcher HMC-Host erreichbar ist (hmc_host für alle folgenden Plays)
+# =============================================================================
+
+- name: Find first reachable HMC host
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Check reachability of each HMC host (SSH port 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].ansible_host | default(item) }}"
+        port: 22
+        timeout: 3
+      loop: "{{ groups['hmc'] }}"
+      register: hmc_reach_result
+      ignore_errors: true
+      loop_control:
+        label: "{{ item }}"
+
+    - name: Set first reachable HMC host (hmc_host and reachable_hmc_host)
+      ansible.builtin.set_fact:
+        reachable_hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+        hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+
+    - name: Fail if no HMC host is reachable
+      ansible.builtin.fail:
+        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
+      when: hmc_host | length == 0
+
+# =============================================================================
 # PLAY 1: MAC von LPAR holen, Kea-Reservation auf bootp_server anlegen
 # =============================================================================
 
@@ -33,7 +64,7 @@
     managed_system: ""
     rhel_release: "9"             # e.g. 9, 9.6, 10
     hostname: ""                  # defaults to lpar_name
-    lpar_host_ip: ""              # gewünschte IP-Adresse
+    lpar_host_ip: ""               # gewünschte IP-Adresse
     nextserver_ip: "{{ hostvars[groups['kickstart_servers'] | first].ansible_host | default('10.32.98.240') }}"
     server_type: "not defined"    # Freitext für ks-power.cfg.j2
     virtual_network: "VLAN1-ETHERNET0"
@@ -41,7 +72,7 @@
     kea_main_config: "/etc/kea/kea-dhcp4.conf"
     kea_service_name: "kea-dhcp4"   # or kea-dhcp4-server on some systems
     dhcp_domain_name: "{{ hostvars[groups['bootp_servers'] | first].domain_name | default('coe.muc.redhat.com') }}"
-    hmc_host: "{{ groups['hmc'] | first | default('') }}"
+    hmc_host: "{{ hostvars['localhost'].hmc_host }}"
     hmc_username: "hscroot"
     hmc_password: ""
 
@@ -112,7 +143,7 @@
 
     - name: Set path for Kea snippet temp file
       ansible.builtin.set_fact:
-        kea_snippet_tmp_path: "{{ lookup('env', 'TMPDIR') | default('/tmp') }}/kea-snippet-{{ lpar_name }}.conf"
+        kea_snippet_tmp_path: "/tmp/kea-snippet-{{ lpar_name }}.conf"
 
     - name: Render Kea reservation snippet to temp file on controller
       ansible.builtin.template:
@@ -173,6 +204,7 @@
 - name: Deploy MAC-specific GRUB config and kickstart file on kickstart server
   hosts: kickstart_servers
   gather_facts: true
+
   vars:
     lpar_name: "{{ hostvars['localhost'].lpar_name }}"
     managed_system: "{{ hostvars['localhost'].managed_system }}"
@@ -207,19 +239,23 @@
         mode: "0644"
       vars:
         kickstart_ks_path: "ks/ks-power-{{ lpar_name }}.cfg"
+      become: true
+      become_user: root
 
     - name: Deploy LPAR-specific kickstart file to webserver
       ansible.builtin.template:
         src: templates/ks-power.cfg.j2
         dest: "{{ kickstart_base_dir }}/ks/ks-power-{{ lpar_name }}.cfg"
         mode: "0644"
+      become: true
+      become_user: root
 
 # =============================================================================
-# PLAY 3: LPAR von HMC aus netboot starten
+# PLAY 3: LPAR von HMC aus netboot starten (nur auf dem erreichbaren HMC)
 # =============================================================================
 
 - name: Boot LPAR from HMC (lpar_netboot)
-  hosts: hmc
+  hosts: "{{ hostvars['localhost'].hmc_host }}"
   gather_facts: false
   vars:
     lpar_name: "{{ hostvars['localhost'].lpar_name }}"

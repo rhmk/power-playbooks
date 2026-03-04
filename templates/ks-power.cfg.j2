@@ -55,6 +55,18 @@ network --hostname={{ hostname | default(lpar_name, true) }}.{{ dhcp_domain_name
 # Root password (use vault-encrypted variable in production!)
 # Generate hash with: python3 -c 'import crypt; print(crypt.crypt("password", crypt.mksalt(crypt.METHOD_SHA512)))'
 rootpw --iscrypted {{ ks_root_password | default('changeme') | password_hash('sha512') }}
+#rootpw --plaintext changeme
+
+# Create Admin User
+user --name=admin --password={{ ks_admin_password | default(ks_root_password|default('changeme')) | password_hash('sha512') }} --iscrypted --shell=/bin/bash --groups=wheel --homedir=/home/admin --gecos="Admin User"
+{% if ks_ssh_pubkey is defined and ks_ssh_pubkey %}
+sshkey --username=admin "{{ ks_ssh_pubkey }}"
+{% endif %}
+
+# Root SSH public key: set ks_ssh_pubkey to add a key to /root/.ssh/authorized_keys (in %post)
+{% if ks_ssh_pubkey is defined and ks_ssh_pubkey %}
+sshkey --username=root "{{ ks_ssh_pubkey }}"
+{% endif %}
 
 # Disable firewall during install (enable post-install)
 firewall --disabled
@@ -232,6 +244,16 @@ sed -i 's/^#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
 # Restart SSH to apply changes
 systemctl restart sshd || true
 
+# Add root's SSH public key if ks_ssh_pubkey is set
+# {% if ks_ssh_pubkey is defined and ks_ssh_pubkey %}
+# mkdir -p /root/.ssh
+# chmod 700 /root/.ssh
+# cat >> /root/.ssh/authorized_keys << 'SSHKEY'
+# {{ ks_ssh_pubkey }}
+# SSHKEY
+# chmod 600 /root/.ssh/authorized_keys
+# {% endif %}
+
 # =============================================================================
 # System configuration
 # =============================================================================
@@ -250,7 +272,7 @@ dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-{{ rhel
 dnf install -y https://public.dhe.ibm.com/software/server/POWER/Linux/yum/download/ibm-power-repo-latest.noarch.rpm
 sed -i 's/less/cat/g' /opt/ibm/lop/configure
 /usr/bin/yes | /opt/ibm/lop/configure
-dnf install --disablerepo=Advance_Toolchain" rsct.basic rsct.core rsct.core.utils
+dnf install --disablerepo=Advance_Toolchain rsct.basic rsct.core rsct.core.utils
 
 # =============================================================================
 # Cleanup

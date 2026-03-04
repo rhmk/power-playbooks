@@ -1,0 +1,70 @@
+{
+  "name": "JT2",
+  "description": "JT2",
+  "spec": [
+    {
+      "question_name": "Name of the System LPAR is created on",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "managed_system",
+      "choices": "power91\npower92",
+      "default": "power91",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_name": "Select LPAR Name",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "lpar_name",
+      "choices": "mkoch01\nmkoch02\nmkoch03\nmkoch04\nmkoch05\nmkoch06\nmkoch07\nmkoch08\nmkoch09",
+      "default": "",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_name": "Select RHEL Release",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "rhel_release",
+      "choices": "10.0\n9.4",
+      "default": 10,
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_name": "Server Type",
+      "required": true,
+      "type": "multiplechoice",
+      "variable": "server_type",
+      "choices": "test\nother",
+      "default": "test",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    },
+    {
+      "question_name": "Enter Root Password",
+      "required": true,
+      "type": "password",
+      "variable": "ks_root_password",
+      "default": "",
+      "max": 32,
+      "min": 8,
+      "new_question": true
+    },
+    {
+      "question_name": "Enter your public ssh key",
+      "required": false,
+      "type": "text",
+      "variable": "ks_ssh_pubkey",
+      "default": "",
+      "max": 1024,
+      "min": 0,
+      "new_question": true
+    }
+  ]
+}
