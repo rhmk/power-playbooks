@@ -255,6 +255,25 @@ systemctl restart sshd || true
 # {% endif %}
 
 # =============================================================================
+# Enable passwordless sudo for group wheel
+# =============================================================================
+# Erstelle eine temporäre Datei
+TMP_SUDOERS=$(mktemp)
+# 1. Zeile mit Passwortpflicht auskommentieren (falls nicht schon geschehen)
+# 2. Zeile für NOPASSWD einkommentieren
+sed -E \
+  -e 's/^[[:space:]]*%wheel[[:space:]]+ALL=\(ALL\)[[:space:]]+ALL/# %wheel ALL=(ALL) ALL/' \
+  -e 's/^[[:space:]]*#[[:space:]]*%wheel[[:space:]]+ALL=\(ALL\)[[:space:]]+NOPASSWD:[[:space:]]*ALL/%wheel ALL=(ALL) NOPASSWD: ALL/' \
+  /etc/sudoers > "$TMP_SUDOERS"
+# check sudoers syntax
+if visudo -cf "$TMP_SUDOERS"; then
+  # Überschreibe /etc/sudoers sicher mit den passenden Berechtigungen
+  cp "$TMP_SUDOERS" /etc/sudoers
+  chmod 0440 /etc/sudoers
+fi
+rm -f "$TMP_SUDOERS"
+
+# =============================================================================
 # System configuration
 # =============================================================================
 
