@@ -7,6 +7,8 @@
 # Play 0 wählt die erste erreichbare HMC (SSH-Port 22). Play 1 führt die Rolle
 # nur auf diesem Host aus – auch wenn die Inventory-Gruppe hmc zwei HMCs enthält.
 # Override: -e hmc_host=... oder -e create_lpar_lv_hmc_host=... überspringt die Prüfung.
+# Play 2 führt rescan-scsi-bus.sh auf der Ziel-LPAR aus (Inventory-Host =
+# create_lpar_lv_lpar_name), damit die neue vSCSI-Platte im Gast erscheint.
 #
 # Pflichtparameter (-e oder in group_vars):
 #   create_lpar_lv_lpar_name        - Name der LPAR
@@ -98,3 +100,31 @@
   roles:
     - role: create_lpar_lv
       # Alle create_lpar_lv_* Variablen via -e oder group_vars/host_vars setzen
+
+# =============================================================================
+# PLAY 2: SCSI-Rescan auf der Ziel-LPAR (Gast)
+# =============================================================================
+
+- name: Rescan SCSI bus on target LPAR
+  hosts: "{{ create_lpar_lv_lpar_name }}"
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Wait for VIOS mapping to settle
+      ansible.builtin.pause:
+        seconds: 5
+
+    - name: Rescan SCSI bus for new vSCSI disk
+      ansible.builtin.command: rescan-scsi-bus.sh -a
+      register: lpar_scsi_rescan
+      changed_when: true
+
+    - name: Show block devices after rescan
+      ansible.builtin.command: lsblk -d -o NAME,SIZE,TYPE,MODEL
+      register: lpar_lsblk
+      changed_when: false
+
+    - name: Display lsblk
+      ansible.builtin.debug:
+        var: lpar_lsblk.stdout_lines
