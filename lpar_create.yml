@@ -43,7 +43,7 @@
     # CPU configuration
     lpar_cpu: 2                    # Number of virtual processors
     lpar_cpu_min: 1                # Minimum processors
-    lpar_cpu_max: 4                # Maximum processors
+    lpar_cpu_max: 16               # Maximum processors
 
     # Processing units (for shared processor mode)
     lpar_proc_units: 0.5           # Processing units
@@ -107,7 +107,7 @@
           - managed_system | length > 0
           - vios_name | length > 0
           - vios_volume_group | length > 0
-          - lpar_cpu | int > 0
+          - lpar_cpu | int >= lpar_cpu_min | int
           - lpar_mem | int >= 1024
           - lpar_disk | int > 0
         fail_msg: |
@@ -118,9 +118,29 @@
           - managed_system must be provided (current: '{{ managed_system }}')
           - vios_name must be provided (current: '{{ vios_name }}')
           - vios_volume_group must be provided (current: '{{ vios_volume_group }}')
-          - lpar_cpu must be > 0 (current: {{ lpar_cpu }})
+          - lpar_cpu must be >= {{ lpar_cpu_min }} (current: {{ lpar_cpu }})
           - lpar_mem must be >= 1024 MB (current: {{ lpar_mem }})
           - lpar_disk must be > 0 GB (current: {{ lpar_disk }})
+
+    - name: Ensure lpar_mem_max is at least lpar_mem
+      ansible.builtin.set_fact:
+        lpar_mem_max: "{{ lpar_mem | int }}"
+      when: lpar_mem | int > lpar_mem_max | int
+
+    - name: Ensure lpar_cpu_max is at least lpar_cpu
+      ansible.builtin.set_fact:
+        lpar_cpu_max: "{{ lpar_cpu | int }}"
+      when: lpar_cpu | int > lpar_cpu_max | int
+
+    - name: Ensure lpar_proc_units is at least 0.05 per virtual processor
+      ansible.builtin.set_fact:
+        lpar_proc_units: "{{ (lpar_cpu | int * 0.05) | round(2) }}"
+      when: lpar_proc_units | float < (lpar_cpu | int * 0.05)
+
+    - name: Ensure lpar_proc_units_max is at least lpar_proc_units
+      ansible.builtin.set_fact:
+        lpar_proc_units_max: "{{ lpar_proc_units | float }}"
+      when: lpar_proc_units | float > lpar_proc_units_max | float
 
     - name: Display LPAR configuration
       ansible.builtin.debug:
@@ -159,7 +179,15 @@
         vm_name: "{{ lpar_name }}"
         os_type: linux
         proc: "{{ lpar_cpu }}"
+        min_proc: "{{ lpar_cpu_min }}"
+        max_proc: "{{ lpar_cpu_max }}"
+        proc_unit: "{{ lpar_proc_units }}"
+        min_proc_unit: "{{ lpar_proc_units_min }}"
+        max_proc_unit: "{{ lpar_proc_units_max }}"
+        proc_mode: "{{ proc_mode }}"
         mem: "{{ lpar_mem }}"
+        min_mem: "{{ lpar_mem_min }}"
+        max_mem: "{{ lpar_mem_max }}"
         virt_network_config:
           - network_name: "{{ virtual_network }}"
         state: present

@@ -241,6 +241,8 @@ By default, images are stored in `uploaded_images` directory. Override with:
 
 Use `lpar_create.yml` to create a new Linux LPAR configured for RHEL installation from a DVD ISO on VIOS.
 
+LPARs are created with **shared uncapped** processors. `proc_unit` is required for shared mode; without it the HMC module would treat `lpar_cpu` as dedicated CPUs.
+
 ### Basic Usage
 
 ```bash
@@ -283,9 +285,9 @@ ansible-playbook lpar_create.yml \
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `lpar_name` | *(required)* | Name of the new LPAR |
-| `lpar_cpu` | `2` | Number of virtual processors |
-| `lpar_cpu_min` | `1` | Minimum processors |
-| `lpar_cpu_max` | `4` | Maximum processors |
+| `lpar_cpu` | `2` | Number of virtual processors (shared) |
+| `lpar_cpu_min` | `2` | Minimum virtual processors |
+| `lpar_cpu_max` | `16` | Maximum virtual processors |
 | `lpar_mem` | `4096` | Memory in MB |
 | `lpar_mem_min` | `2048` | Minimum memory in MB |
 | `lpar_mem_max` | `16384` | Maximum memory in MB |
