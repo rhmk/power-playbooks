@@ -39,9 +39,12 @@
     CURL_CA_BUNDLE: ""
 
   vars:
-    # HMC-Passwort aus häufig verwendeter Variable durchreichen
-    create_lpar_lv_hmc_password: "{{ hmc_pass | default('') }}"
+    # set defaults
+    create_lpar_lv_hmc_password: "{{ hmc_password | default('') }}"
+    create_lpar_lv_hmc_username: "{{ hmc_username | default('') }}"
     create_lpar_lv_hmc_host: "{{ inventory_hostname }}"
+    create_lpar_lv_volume_name: "{{ create_lpar_lv_volume_name }}-extradisk"
+    create_lpar_lv_vios_name: "{{ create_lpar_lv_managed_system }}-vios"
 
   roles:
     - role: create_lpar_lv
