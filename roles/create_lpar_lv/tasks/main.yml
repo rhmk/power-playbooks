@@ -7,6 +7,15 @@
 # Es wird nur eine Verbindung (zur HMC) benötigt.
 # =============================================================================
 
+- name: Validate credentials
+  ansible.builtin.assert:
+    that:
+      - create_lpar_lv_hmc_username is defined and create_lpar_lv_hmc_username | length > 0
+      - create_lpar_lv_hmc_password is defined and create_lpar_lv_hmc_password | length > 0
+    fail_msg: |
+      Fehlende Pflichtvariablen. Bitte setzen:
+        create_lpar_lv_hmc_username, create_lpar_lv_hmc_password
+
 - name: Validate required variables
   ansible.builtin.assert:
     that:
@@ -15,12 +24,12 @@
       - create_lpar_lv_volume_name is defined and create_lpar_lv_volume_name | length > 0
       - create_lpar_lv_volume_group is defined and create_lpar_lv_volume_group | length > 0
       - create_lpar_lv_vios_name is defined and create_lpar_lv_vios_name | length > 0
-      - create_lpar_lv_hmc_password is defined and create_lpar_lv_hmc_password | length > 0
+      - create_lpar_lv_hmc_host is defined and create_lpar_lv_hmc_host | length > 0
     fail_msg: |
       Fehlende Pflichtvariablen. Bitte setzen:
         create_lpar_lv_lpar_name, create_lpar_lv_managed_system,
         create_lpar_lv_volume_name, create_lpar_lv_volume_group,
-        create_lpar_lv_vios_name, create_lpar_lv_hmc_password
+        create_lpar_lv_vios_name, create_lpar_lv_hmc_host
 
 # =============================================================================
 # LPAR-Facts vom HMC holen (für PartitionID)
