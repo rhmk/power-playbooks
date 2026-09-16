@@ -4,7 +4,9 @@
 # Führt die Rolle create_lpar_lv aus. Nur eine Verbindung (zur HMC);
 # VIOS-Befehle laufen per viosvrcmd auf der HMC.
 #
-# Play mit hosts: hmc – Rolle läuft pro HMC, create_lpar_lv_hmc_host = inventory_hostname.
+# Play 0 wählt die erste erreichbare HMC (SSH-Port 22). Play 1 führt die Rolle
+# nur auf diesem Host aus – auch wenn die Inventory-Gruppe hmc zwei HMCs enthält.
+# Override: -e hmc_host=... oder -e create_lpar_lv_hmc_host=... überspringt die Prüfung.
 #
 # Pflichtparameter (-e oder in group_vars):
 #   create_lpar_lv_lpar_name        - Name der LPAR
@@ -15,11 +17,11 @@
 #   create_lpar_lv_hmc_password    - HMC-Passwort
 #
 # Optional u.a.:
-#   create_lpar_lv_hmc_host         - HMC-Host (Default: inventory_hostname)
-#   create_lpar_lv_disk_size_gb     - Größe in GB (Default: 50)
+#   create_lpar_lv_hmc_host / hmc_host  - HMC-Host (sonst erste erreichbare aus Gruppe hmc)
+#   create_lpar_lv_disk_size_gb         - Größe in GB (Default: 50)
 #
 # Beispiel:
-#   ansible-playbook create_lpar_lv.yml -i inventory/hosts.yml \
+#   ansible-playbook lpar_add_lv.yml -i inventory/hosts.yml \
 #     -e "create_lpar_lv_lpar_name=mylpar" \
 #     -e "create_lpar_lv_managed_system=power91" \
 #     -e "create_lpar_lv_volume_name=mylpar_runix" \
@@ -29,9 +31,56 @@
 #     -e "hmc_pass=YOUR_HMC_PASS" \
 #     -e "create_lpar_lv_hmc_password={{ hmc_pass }}"
 
-- name: Create LPAR Logical Volume on VIOS (nur HMC-Verbindung)
-  hosts: hmc
+# =============================================================================
+# PLAY 0: Erste erreichbare HMC ermitteln
+# =============================================================================
+
+- name: Find first reachable HMC host
+  hosts: localhost
   connection: local
+  gather_facts: false
+
+  vars:
+    _hmc_host_override: "{{ create_lpar_lv_hmc_host | default(hmc_host | default(''), true) }}"
+
+  tasks:
+    - name: Use explicitly set HMC host
+      ansible.builtin.set_fact:
+        hmc_host: "{{ _hmc_host_override }}"
+      when: _hmc_host_override | length > 0
+
+    - name: Check reachability of each HMC host (SSH port 22)
+      ansible.builtin.wait_for:
+        host: "{{ hostvars[item].ansible_host | default(item) }}"
+        port: 22
+        timeout: 3
+      loop: "{{ groups['hmc'] }}"
+      register: hmc_reach_result
+      ignore_errors: true
+      loop_control:
+        label: "{{ item }}"
+      when: hmc_host | default('') | length == 0
+
+    - name: Set first reachable HMC host
+      ansible.builtin.set_fact:
+        hmc_host: "{{ (hmc_reach_result.results | rejectattr('failed') | map(attribute='item') | first) | default('') }}"
+      when: hmc_host | default('') | length == 0
+
+    - name: Fail if no HMC host is reachable
+      ansible.builtin.fail:
+        msg: "No HMC host could be reached. Checked: {{ groups['hmc'] | join(', ') }}."
+      when: hmc_host | length == 0
+
+    - name: Show selected HMC host
+      ansible.builtin.debug:
+        msg: "Using HMC host: {{ hmc_host }}"
+
+# =============================================================================
+# PLAY 1: Rolle nur auf der ausgewählten HMC
+# =============================================================================
+
+- name: Create LPAR Logical Volume on VIOS (eine HMC)
+  hosts: "{{ hostvars['localhost'].hmc_host }}"
   gather_facts: false
 
   environment:
@@ -44,7 +93,7 @@
     create_lpar_lv_hmc_username: "{{ hmc_username | default('') }}"
     create_lpar_lv_hmc_host: "{{ inventory_hostname }}"
     create_lpar_lv_volume_name: "{{ create_lpar_lv_volume_name }}-extradisk"
-    create_lpar_lv_vios_name: "{{ create_lpar_lv_managed_system }}-vios"
+    create_lpar_lv_vios_name: "{{ create_lpar_lv_managed_system }}-vios"
 
   roles:
     - role: create_lpar_lv
