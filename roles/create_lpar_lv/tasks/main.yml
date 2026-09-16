@@ -270,7 +270,7 @@
 
     - name: Set VTD name for mapping (max 15 chars)
       ansible.builtin.set_fact:
-        create_lpar_lv_vtd_name: "{{ create_lpar_lv_vtd_name | default((create_lpar_lv_lpar_name | truncate(11, True, '')) + '_vtd') }}"
+        create_lpar_lv_vtd_name: "{{ create_lpar_lv_vtd_name | default((create_lpar_lv_volume_name | truncate(11, True, '')) + '_vtd') }}"
 
     # =========================================================================
     # LV an vhost mappen (viosvrcmd mkvdev)
